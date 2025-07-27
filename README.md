@@ -170,4 +170,4 @@ If you encounter download issues with YouTube videos:
 
 > Note: This application now uses pytube instead of yt-dlp for YouTube downloads, which should provide a more reliable download experience.
 
-<a href="https://www.buymeacoffee.com/likith_codebook"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=likith_codebook&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
+<a href="https://www.buymeacoffee.com/likith_codebook"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=likith_codebook&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
