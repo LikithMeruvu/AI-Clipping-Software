@@ -11,11 +11,32 @@ from config import TEMP_DIR, YOUTUBE_USER_AGENT
 
 
 class YouTubeDownloader:
+    """
+    Handles the downloading of YouTube videos.
+
+    This class uses the pytubefix library to download a YouTube video
+    and prepares it for further processing.
+    """
     def __init__(self, temp_dir=TEMP_DIR):
+        """
+        Initializes the YouTubeDownloader.
+
+        Args:
+            temp_dir (Path, optional): The directory to save temporary files.
+                                       Defaults to TEMP_DIR from config.
+        """
         self.temp_dir = temp_dir
         
     def _sanitize_filename(self, filename):
-        """Remove invalid characters from filename to prevent OS errors."""
+        """
+        Sanitizes a filename by removing invalid characters.
+
+        Args:
+            filename (str): The filename to sanitize.
+
+        Returns:
+            str: The sanitized filename.
+        """
         if not filename:
             return "unknown_title"
             
@@ -32,6 +53,15 @@ class YouTubeDownloader:
 
     @staticmethod
     def get_video_id(url):
+        """
+        Extracts the video ID from a YouTube URL.
+
+        Args:
+            url (str): The YouTube URL.
+
+        Returns:
+            str: The video ID, or None if not found.
+        """
         if 'youtu.be' in url:
             return url.split('/')[-1].split('?')[0]
         if 'youtube.com' in url:
@@ -39,6 +69,16 @@ class YouTubeDownloader:
         return None
 
     def download(self, url):
+        """
+        Downloads a YouTube video from the given URL.
+
+        Args:
+            url (str): The URL of the YouTube video.
+
+        Returns:
+            tuple: A tuple containing the path to the downloaded video,
+                   the video title, and its duration.
+        """
         print(f"🔗 Processing YouTube URL: {url}")
         video_id = self.get_video_id(url)
         if not video_id:

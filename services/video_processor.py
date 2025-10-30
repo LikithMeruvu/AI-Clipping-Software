@@ -11,7 +11,21 @@ from utils.helpers import generate_random_clips, cleanup_temp_files
 
 
 class VideoProcessor:
+    """
+    Orchestrates the entire video processing pipeline.
+
+    This class initializes and manages all the services required for
+    downloading, transcribing, selecting clips, tracking faces, and
+    adding captions to a YouTube video.
+    """
     def __init__(self, caption_style='clean_white'):
+        """
+        Initializes the VideoProcessor with a specific caption style.
+
+        Args:
+            caption_style (str, optional): The style of captions to use.
+                                            Defaults to 'clean_white'.
+        """
         self.downloader = YouTubeDownloader()
         self.transcriber = WhisperSingleton()
         self.ai_selector = GeminiSelector(api_key=GEMINI_API_KEY)
@@ -19,6 +33,19 @@ class VideoProcessor:
         self.caption_maker = CaptionMaker(caption_style)
 
     def process_video(self, url, num_clips, min_duration, max_duration):
+        """
+        Processes a YouTube video to generate viral clips.
+
+        Args:
+            url (str): The URL of the YouTube video.
+            num_clips (int): The number of clips to generate.
+            min_duration (int): The minimum duration of each clip.
+            max_duration (int): The maximum duration of each clip.
+
+        Returns:
+            tuple: A tuple containing a list of output file paths and the
+                   title of the video.
+        """
         print("📥 Downloading video...")
         video_path, title, duration = self.downloader.download(url)
         print(f"✅ Download complete: {title} ({duration:.1f}s)")

@@ -1,3 +1,10 @@
+"""
+Configuration for the YouTube Viral Clipper application.
+
+This module loads environment variables and sets up default configurations
+for the application. It includes settings for API keys, directories,
+and model configurations.
+"""
 import os
 from pathlib import Path
 from dotenv import load_dotenv
