@@ -4,6 +4,12 @@ import os
 from config import WHISPER_MODEL
 
 class WhisperSingleton:
+    """
+    A singleton class for transcribing audio using the faster-whisper library.
+
+    This class ensures that the Whisper model is loaded only once and provides
+    a method to transcribe audio from a video file.
+    """
     _instance = None
     _model = None
 
@@ -14,6 +20,7 @@ class WhisperSingleton:
         return cls._instance
 
     def _load_model(self):
+        """Loads the faster-whisper model with optimized settings."""
         if self._model is None:
             print(f"Loading faster-whisper model ({WHISPER_MODEL})... (one time only)")
             try:
@@ -46,6 +53,16 @@ class WhisperSingleton:
 
 
     def transcribe(self, video_path):
+        """
+        Transcribes the audio from a video file.
+
+        Args:
+            video_path (str): The path to the video file.
+
+        Returns:
+            tuple: A tuple containing a list of words with timestamps, the full
+                   transcript, and a list of segments.
+        """
         print("🎵 Transcribing video...")
         try:
             print("⏳ Initializing transcription with faster-whisper...")

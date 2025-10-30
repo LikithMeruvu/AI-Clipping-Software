@@ -4,7 +4,13 @@ import numpy as np
 
 
 class FaceTracker:
+    """
+    Tracks faces in a video and crops the frame to keep the speaker centered.
+    """
     def __init__(self):
+        """
+        Initializes the FaceTracker with a MediaPipe face detection model.
+        """
         self.mp_face_detection = mp.solutions.face_detection
         # Use model_selection=0 (short-range) for better performance
         # Increase min_detection_confidence to reduce false positives
@@ -16,6 +22,17 @@ class FaceTracker:
         print("🎯 Initialized intelligent face tracking with MediaPipe (optimized)")
 
     def detect_faces_in_frame(self, frame, frame_time=None):
+        """
+        Detects faces in a single frame of a video.
+
+        Args:
+            frame (numpy.ndarray): The video frame to process.
+            frame_time (float, optional): The timestamp of the frame.
+                                           Defaults to None.
+
+        Returns:
+            list: A list of dictionaries, each representing a detected face.
+        """
         # Use cache if available
         if frame_time is not None and frame_time in self.face_cache:
             return self.face_cache[frame_time]
@@ -64,6 +81,17 @@ class FaceTracker:
             return []
 
     def smooth_trajectory(self, positions, window_size=5):
+        """
+        Smoothes a trajectory of positions using a moving average.
+
+        Args:
+            positions (list): A list of (x, y) tuples representing positions.
+            window_size (int, optional): The size of the moving average window.
+                                         Defaults to 5.
+
+        Returns:
+            list: A list of smoothed (x, y) tuples.
+        """
         if len(positions) <= window_size:
             return positions
 
@@ -80,6 +108,15 @@ class FaceTracker:
         return smoothed
 
     def track_and_crop(self, clip):
+        """
+        Tracks faces in a video clip and crops it to keep the speaker centered.
+
+        Args:
+            clip (moviepy.editor.VideoFileClip): The video clip to process.
+
+        Returns:
+            moviepy.editor.VideoFileClip: The cropped video clip.
+        """
         width, height = clip.size
         target_width = int(height * 9 / 16)
         if target_width % 2 != 0:
@@ -155,7 +192,7 @@ class FaceTracker:
         return cropped_clip
 
     def close(self):
-        """Release resources used by the face detector"""
+        """Releases resources used by the face detector."""
         try:
             # Clear cache to free memory
             self.face_cache = {}

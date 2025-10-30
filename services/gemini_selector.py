@@ -3,12 +3,34 @@ import random
 import google.generativeai as genai
 
 class GeminiSelector:
+    """
+    Uses the Gemini AI model to select the most viral clips from a transcript.
+    """
     def __init__(self, api_key):
+        """
+        Initializes the GeminiSelector with an API key.
+
+        Args:
+            api_key (str): The API key for the Gemini AI model.
+        """
         self.api_key = api_key
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
 
     def select_clips(self, segments, video_duration, n, min_dur, max_dur):
+        """
+        Selects the most viral clips from a transcript using the Gemini AI model.
+
+        Args:
+            segments (list): A list of transcript segments with timestamps.
+            video_duration (float): The total duration of the video.
+            n (int): The number of clips to select.
+            min_dur (int): The minimum duration of each clip.
+            max_dur (int): The maximum duration of each clip.
+
+        Returns:
+            list: A list of dictionaries, each representing a selected clip.
+        """
         segments_text = []
         for i, seg in enumerate(segments):
             segments_text.append(f"[{seg['start']:.1f}s-{seg['end']:.1f}s]: {seg['text']}")

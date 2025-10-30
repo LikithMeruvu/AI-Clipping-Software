@@ -13,9 +13,11 @@ sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure'
 
 # Function to print with immediate flush
 def log(message):
+    """Prints a message to the console with immediate flushing."""
     print(message, flush=True)
 
 def display_caption_styles():
+    """Displays the available caption styles to the user."""
     styles = CAPTION_STYLES
     log("\n🎨 Available Caption Styles (No Strokes):")
     log("=" * 50)
@@ -25,7 +27,15 @@ def display_caption_styles():
     return list(styles.keys())
 
 def validate_youtube_url(url):
-    """Validate that the URL is a proper YouTube URL"""
+    """
+    Validates that the provided URL is a valid YouTube URL.
+
+    Args:
+        url (str): The URL to validate.
+
+    Returns:
+        bool: True if the URL is a valid YouTube URL, False otherwise.
+    """
     if not url:
         return False
         
@@ -41,6 +51,12 @@ def validate_youtube_url(url):
     return True
 
 def main(url=None):
+    """
+    The main function of the YouTube Viral Clipper application.
+
+    Args:
+        url (str, optional): The YouTube URL to process. Defaults to None.
+    """
     log("🚀 === YOUTUBE VIRAL CLIPPER === 🚀")
     log("✨ Features: AI Clip Selection | Smart Face Tracking | Word-by-Word Captions")
     log("")

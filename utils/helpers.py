@@ -2,18 +2,32 @@ import random
 from config import TEMP_DIR
 
 def cleanup_temp_files():
-    """Removes all files from the temporary directory."""
+    """
+    Removes all files from the temporary directory.
+    """
     print("🧹 Cleaning up temporary files...")
     try:
         for item in TEMP_DIR.iterdir():
-            item.unlink()
+            if item.is_file():
+                item.unlink()
         print("✅ Cleanup complete.")
     except Exception as e:
         print(f"⚠️  Could not clean up all temporary files: {e}")
 
 
 def generate_random_clips(duration, num_clips, min_duration, max_duration):
-    """Generates random clip start and end times as a fallback."""
+    """
+    Generates random clip start and end times as a fallback.
+
+    Args:
+        duration (float): The total duration of the video.
+        num_clips (int): The number of clips to generate.
+        min_duration (int): The minimum duration of each clip.
+        max_duration (int): The maximum duration of each clip.
+
+    Returns:
+        list: A list of dictionaries, each representing a random clip.
+    """
     clips = []
     for i in range(num_clips):
         clip_duration = random.uniform(min_duration, max_duration)

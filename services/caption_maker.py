@@ -7,13 +7,29 @@ from styles.caption_styles import CAPTION_STYLES, HIGHLIGHT_KEYWORDS
 
 
 class CaptionMaker:
+    """
+    Creates and adds word-by-word captions to a video clip.
+    """
     def __init__(self, selected_style='clean_white'):
+        """
+        Initializes the CaptionMaker with a selected caption style.
+
+        Args:
+            selected_style (str, optional): The style of captions to use.
+                                            Defaults to 'clean_white'.
+        """
         self.font_paths = self.find_available_fonts()
         self.selected_style = selected_style
         self.styles = CAPTION_STYLES
         self.highlight_keywords = HIGHLIGHT_KEYWORDS
 
     def find_available_fonts(self):
+        """
+        Finds available fonts on the system.
+
+        Returns:
+            dict: A dictionary of available font paths.
+        """
         font_collections = {
             'bold': [
                 '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -49,6 +65,16 @@ class CaptionMaker:
         return found_fonts
 
     def get_font(self, font_type, font_size):
+        """
+        Gets a font object for a given type and size.
+
+        Args:
+            font_type (str): The type of font (e.g., 'bold', 'regular').
+            font_size (int): The size of the font.
+
+        Returns:
+            ImageFont: An ImageFont object.
+        """
         try:
             font_path = self.font_paths.get(font_type)
             if font_path:
@@ -59,6 +85,19 @@ class CaptionMaker:
             return ImageFont.load_default()
 
     def create_word_image(self, word, video_size, font_size, is_highlighted=False):
+        """
+        Creates an image of a single word.
+
+        Args:
+            word (str): The word to create an image of.
+            video_size (tuple): The size of the video (width, height).
+            font_size (int): The size of the font.
+            is_highlighted (bool, optional): Whether the word should be
+                                             highlighted. Defaults to False.
+
+        Returns:
+            numpy.ndarray: A numpy array representing the image.
+        """
         width, height = video_size
 
         style_config = self.styles.get(self.selected_style, self.styles['clean_white'])
@@ -91,6 +130,18 @@ class CaptionMaker:
         return np.array(img)
 
     def add_captions(self, clip, words, clip_start_time):
+        """
+        Adds word-by-word captions to a video clip.
+
+        Args:
+            clip (moviepy.editor.VideoFileClip): The video clip to add captions to.
+            words (list): A list of words with timestamps.
+            clip_start_time (float): The start time of the clip in the original
+                                     video.
+
+        Returns:
+            moviepy.editor.VideoFileClip: The video clip with captions.
+        """
         if not words:
             return clip
 
