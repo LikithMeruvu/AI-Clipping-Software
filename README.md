@@ -13,8 +13,8 @@
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/youtube-viral-clipper.git
-   cd youtube-viral-clipper
+   git clone https://github.com/LikithMeruvu/AI-Clipping-Software.git
+   cd AI-Clipping-Software
    ```
 
 2. **Install the dependencies:**
@@ -45,8 +45,8 @@ The script will prompt you for the YouTube URL and other options. The generated 
 If you encounter issues downloading YouTube videos, try the following:
 
 - **Use a custom user agent**: Set a custom user agent in your `.env` file to improve download reliability.
-- **Update pytube**: YouTube frequently changes its platform, so keeping `pytube` updated can help:
+- **Update pytubefix**: YouTube frequently changes its platform, so keeping `pytubefix` updated can help:
   ```bash
-  pip install -U pytube
+  pip install -U pytubefix
   ```
 - **Check video availability**: Ensure the video is publicly available and not age-restricted or private.

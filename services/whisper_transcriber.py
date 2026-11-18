@@ -1,5 +1,5 @@
 from faster_whisper import WhisperModel
-import torch
+import ctranslate2  # already a faster-whisper dependency; avoids pulling in all of torch
 import os
 from config import WHISPER_MODEL
 
@@ -25,8 +25,9 @@ class WhisperSingleton:
             print(f"Loading faster-whisper model ({WHISPER_MODEL})... (one time only)")
             try:
                 # Check if CUDA is available
-                compute_type = "float16" if torch.cuda.is_available() else "int8"
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                has_cuda = ctranslate2.get_cuda_device_count() > 0
+                compute_type = "float16" if has_cuda else "int8"
+                device = "cuda" if has_cuda else "cpu"
                 
                 # Set environment variable to reduce memory usage
                 os.environ["OMP_NUM_THREADS"] = "1"
@@ -39,6 +40,7 @@ class WhisperSingleton:
                     cpu_threads=4,  # Limit CPU threads to prevent overload
                     num_workers=2    # Reduce worker threads
                 )
+                self._device = device
                 print(f"✅ faster-whisper model loaded and cached on: {device} with {compute_type} precision")
             except Exception as e:
                 print(f"Error loading model, falling back to CPU with minimal settings: {e}")
@@ -119,5 +121,12 @@ class WhisperSingleton:
             return words, full_text, segments_list
 
         except Exception as e:
+            # CUDA can be detected yet unusable (e.g. cublas64_12.dll missing); that error only
+            # appears once decoding starts. Reload on CPU and retry once.
+            if getattr(self, "_device", "cpu") == "cuda" and any(k in str(e).lower() for k in ("cublas", "cudnn", "cuda")):
+                print(f"⚠️ CUDA unusable ({e}); retrying on CPU")
+                self._model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+                self._device = "cpu"
+                return self.transcribe(video_path)
             print(f"❌ Transcription failed: {e}")
             return [], "", []
