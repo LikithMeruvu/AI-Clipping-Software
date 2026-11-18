@@ -106,12 +106,18 @@
         <div><label for="translate">Translate captions to</label><input type="text" id="translate" placeholder="e.g. Spanish"></div>
         <div><label for="language">Source language</label><input type="text" id="language" placeholder="auto"></div>
       </div>
+      <div class="row">
+        <div><label for="layout">Layout</label><select id="layout"><option value="auto">Auto (split for 2 speakers)</option><option value="single">Single speaker</option><option value="split">Split screen</option></select></div>
+        <div><label for="dub">AI dub into</label><input type="text" id="dub" placeholder="e.g. Spanish"></div>
+      </div>
       <div class="toggles">
         <label><input type="checkbox" id="hook" checked> Hook headline</label>
         <label><input type="checkbox" id="captions" checked> Captions</label>
         <label><input type="checkbox" id="remove_silence" checked> Cut long pauses</label>
         <label><input type="checkbox" id="track_faces" checked> Face tracking</label>
         <label><input type="checkbox" id="progress_bar"> Progress bar</label>
+        <label><input type="checkbox" id="emoji"> Emoji pop-ups</label>
+        <label><input type="checkbox" id="broll"> AI B-roll (Pexels key)</label>
       </div>
       <div id="tokenRow" hidden>
         <label for="token">API token</label>
@@ -174,6 +180,7 @@
       language: $("language").value.trim() || null, translate_to: $("translate").value.trim() || null,
       hook: $("hook").checked, captions: $("captions").checked, remove_silence: $("remove_silence").checked,
       track_faces: $("track_faces").checked, progress_bar: $("progress_bar").checked,
+      emoji: $("emoji").checked, broll: $("broll").checked, layout: $("layout").value, dub_to: $("dub").value.trim() || null,
     };
   }
 

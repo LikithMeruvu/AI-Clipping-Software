@@ -250,3 +250,57 @@ def test_fetch_broll_downloads_once_and_survives_failure(tmp_path):
         raise OSError("offline")
 
     assert fetch_broll("other", "key", tmp_path, boom) is None
+
+
+# ---------- publishing (mocked: no network, no credentials) ----------
+
+def test_build_body_adds_shorts_tag_and_schedule_forces_private():
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    from clipper.publish import PublishError, UploadRequest, build_body
+    when = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body = build_body(UploadRequest(Path("x.mp4"), "T" * 120, "desc", privacy="public", publish_at=when,
+                                    tags=("#a", "#b")))
+    assert len(body["snippet"]["title"]) == 90 and body["snippet"]["tags"] == ["a", "b"]
+    assert "#Shorts" in body["snippet"]["description"]
+    assert body["status"]["privacyStatus"] == "private" and body["status"]["publishAt"].endswith("Z")
+    with pytest.raises(PublishError):
+        build_body(UploadRequest(Path("x.mp4"), "t", "d", publish_at="2001-01-01T00:00:00Z"))
+    with pytest.raises(PublishError):
+        build_body(UploadRequest(Path("x.mp4"), "t", "d", privacy="everyone"))
+
+
+def test_upload_and_stats_use_the_api_in_order(tmp_path):
+    import json
+
+    from clipper.publish import UploadRequest, fetch_stats, record_publication, upload
+    f = tmp_path / "c.mp4"
+    f.write_bytes(b"0" * 1000)
+
+    class Req:
+        def next_chunk(self):
+            return None, {"id": "abc12345678"}
+
+    class Videos:
+        def insert(self, **kw):
+            assert kw["part"] == "snippet,status" and kw["body"]["snippet"]["title"] == "Hi"
+            return Req()
+
+        def list(self, **kw):
+            class R:
+                def execute(self_inner):
+                    return {"items": [{"id": "abc12345678", "statistics": {"viewCount": "42", "likeCount": "3"}}]}
+            return R()
+
+    class Svc:
+        def videos(self):
+            return Videos()
+
+    vid = upload(UploadRequest(f, "Hi", "d"), tmp_path / "tok.json", service=Svc())
+    assert vid == "abc12345678"
+    rec = tmp_path / "published.json"
+    record_publication(rec, {"video_id": vid, "title": "Hi", "predicted_score": 90})
+    rows = fetch_stats(rec, tmp_path / "tok.json", service=Svc())
+    assert rows[0]["views"] == 42 and rows[0]["predicted_score"] == 90
+    assert json.loads(rec.read_text())[0]["video_id"] == vid

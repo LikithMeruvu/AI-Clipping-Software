@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     render_workers: int = Field(default=2, ge=1, le=8)
     fonts_dir: Path | None = None  # defaults to the OS font directory when unset
 
+    youtube_client_secrets: Path | None = None  # OAuth desktop client JSON for publishing
+
     # --- storage ---
     data_dir: Path = Path("data")
     output_dir: Path = Path("output")
