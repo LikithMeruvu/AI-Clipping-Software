@@ -51,11 +51,15 @@ class JobOptions(BaseModel):
     focus: str | None = Field(default=None, max_length=300)
     language: str | None = Field(default=None, max_length=10)
     translate_to: str | None = Field(default=None, max_length=40)
+    dub_to: str | None = Field(default=None, max_length=40)
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True
+    emoji: bool = False
+    broll: bool = False
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"
 
 
 def _now() -> str:
