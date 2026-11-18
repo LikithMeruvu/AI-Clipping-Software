@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     whisper_model: str = "large-v3-turbo"  # use "small" or "base" on CPU
     whisper_device: Literal["auto", "cuda", "cpu"] = "auto"
 
+    tts_model: str = "gemini-2.5-flash-preview-tts"  # used by AI dubbing
+    tts_voice: str = "Kore"
+
     # --- rendering ---
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"

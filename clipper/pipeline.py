@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from .captions import STYLES, Line, build_srt, group_words
 from .config import Settings
+from .dub import synthesize
 from .llm import LLM, LLMError, build_llm
 from .media import MediaError, pick_encoder, probe
 from .render import RenderJob, render_clip
@@ -57,6 +58,7 @@ class Options:
     focus: str | None = None
     language: str | None = None          # source language hint; None = auto-detect
     translate_to: str | None = None      # e.g. "Spanish"; captions are translated
+    dub_to: str | None = None            # e.g. "Spanish"; AI voice-over (also translates captions)
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True
@@ -210,13 +212,18 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
         timemap = TimeMap.from_intervals(intervals)
         words = timemap.map_words(transcript.words)
         lines: list[Line] = group_words(words, style) if (options.captions and words) else []
-        if options.translate_to and lines and llm is not None:
+        target_lang = options.dub_to or options.translate_to
+        dub_wav = None
+        if target_lang and lines and llm is not None:
             try:
-                translated = _translate(llm, [" ".join(w.text for w in ln.words or ()) for ln in lines],
-                                        options.translate_to)
-                lines = [Line(start=ln.start, end=ln.end, text=t) for ln, t in zip(lines, translated)]
-            except LLMError as exc:
-                warnings.append(f"translation skipped for clip {i}: {exc}")
+                translated = _translate(llm, [" ".join(w.text for w in ln.words or ()) for ln in lines], target_lang)
+                lines = [Line(start=ln.start, end=ln.end, text=t) for ln, t in zip(lines, translated, strict=False)]
+                if options.dub_to:
+                    dub_wav = job_dir / f"clip_{i:02d}.dub.wav"
+                    synthesize(settings, " ".join(translated), options.dub_to, dub_wav, timemap.duration, warnings)
+            except Exception as exc:  # translation/TTS are optional extras: keep the clip, report the gap
+                warnings.append(f"translation/dub skipped for clip {i}: {exc}")
+                dub_wav = None
 
         stem = f"clip_{i:02d}_score{clip.score}"
         out = job_dir / f"{stem}.mp4"
@@ -224,7 +231,7 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
             source=source.path, output=out, intervals=intervals, captions=lines, style=style,
             width=width, height=height, hook=clip.hook if options.hook else None,
             progress_bar=options.progress_bar, track_faces=options.track_faces, layout=options.layout,
-            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo,
+            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav,
             encoder=encoder, fonts_dir=fonts, models_dir=settings.models_dir,
             ffmpeg=settings.ffmpeg_bin, ffprobe=settings.ffprobe_bin,
         )
@@ -253,6 +260,9 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
                 meta["duration"] = round(res.duration, 2)
                 rj.output.with_suffix(".srt").write_text(build_srt(rj.captions, style), encoding="utf-8")
                 meta["status"] = "ok"
+                if rj.dub:
+                    meta["dubbed"] = True
+                    rj.dub.unlink(missing_ok=True)
             except Exception as exc:  # one bad clip must not sink the whole job
                 log.exception("clip %s failed", meta["index"])
                 meta["status"] = "failed"

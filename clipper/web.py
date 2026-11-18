@@ -51,6 +51,7 @@ class JobOptions(BaseModel):
     focus: str | None = Field(default=None, max_length=300)
     language: str | None = Field(default=None, max_length=10)
     translate_to: str | None = Field(default=None, max_length=40)
+    dub_to: str | None = Field(default=None, max_length=40)
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True

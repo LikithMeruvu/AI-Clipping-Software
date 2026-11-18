@@ -45,6 +45,7 @@ class RenderJob:
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
+    dub: Path | None = None                   # translated speech (wav) mixed over the ducked original
     encoder: str = "libx264"
     fonts_dir: Path | None = None
     models_dir: Path = Path("data/models")
@@ -121,6 +122,11 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
     if job.logo:
         inputs += ["-loop", "1", "-i", str(job.logo)]
         logo_idx = next_input
+        next_input += 1
+    dub_idx = None
+    if job.dub:
+        inputs += ["-i", str(job.dub)]
+        dub_idx = next_input
 
     chain: list[str] = []
     pre: list[str] = []  # graph pieces that must come before the main chain (split layout)
@@ -165,14 +171,19 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
     else:
         graph.append("[vcap]null[vout]")
 
-    if bgm_idx is not None:
+    if dub_idx is not None:
+        graph.append(f"[{dub_idx}:a]aresample=48000,loudnorm=I=-14:TP=-1.5:LRA=11[dubv]")
+        graph.append("[0:a]volume=0.10[orig]")
+        graph.append("[orig][dubv]amix=inputs=2:duration=longest:normalize=0[voice]")
+    else:
         graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11[voice]")
+    if bgm_idx is not None:
         graph.append(f"[{bgm_idx}:a]volume={job.bgm_volume},aresample=48000[bg]")
         graph.append("[voice]asplit=2[vo][sc]")
         graph.append("[bg][sc]sidechaincompress=threshold=0.03:ratio=8:attack=15:release=350[duck]")
         graph.append("[vo][duck]amix=inputs=2:duration=first:dropout_transition=0[aout]")
     else:
-        graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
+        graph.append("[voice]anull[aout]")
 
     args = [job.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *inputs,
             "-filter_complex", ";".join(graph),
