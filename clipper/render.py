@@ -45,6 +45,7 @@ class RenderJob:
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
+    emojis: tuple[tuple[float, float, Path], ...] = ()   # (start, end, png) pop-ups above the captions
     dub: Path | None = None                   # translated speech (wav) mixed over the ducked original
     encoder: str = "libx264"
     fonts_dir: Path | None = None
@@ -123,6 +124,11 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
         inputs += ["-loop", "1", "-i", str(job.logo)]
         logo_idx = next_input
         next_input += 1
+    emoji_idx = []
+    for _, _, png in job.emojis:
+        inputs += ["-loop", "1", "-i", str(png)]
+        emoji_idx.append(next_input)
+        next_input += 1
     dub_idx = None
     if job.dub:
         inputs += ["-i", str(job.dub)]
@@ -167,9 +173,16 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
     graph: list[str] = [*pre, ",".join(chain) + "[vcap]"]
     if logo_idx is not None:
         graph.append(f"[{logo_idx}:v]scale=iw*0.16:-1,format=rgba[logo]")
-        graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vout]")
+        graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vbase]")
     else:
-        graph.append("[vcap]null[vout]")
+        graph.append("[vcap]null[vbase]")
+    current = "vbase"  # emoji pop-ups: chain one timed overlay per emoji
+    for n, ((start, end, _), idx) in enumerate(zip(job.emojis, emoji_idx, strict=False)):
+        size = round(W * 0.14)
+        graph.append(f"[{idx}:v]scale={size}:{size},format=rgba[em{n}]")
+        graph.append(f"[{current}][em{n}]overlay=x=(W-w)/2:y=H*0.60:enable='between(t,{start:.2f},{end:.2f})'[ov{n}]")
+        current = f"ov{n}"
+    graph.append(f"[{current}]null[vout]")
 
     if dub_idx is not None:
         graph.append(f"[{dub_idx}:a]aresample=48000,loudnorm=I=-14:TP=-1.5:LRA=11[dubv]")

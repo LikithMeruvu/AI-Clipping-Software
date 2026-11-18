@@ -55,6 +55,7 @@ class JobOptions(BaseModel):
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True
+    emoji: bool = False
     progress_bar: bool = False
     track_faces: bool = True
     layout: str = "auto"

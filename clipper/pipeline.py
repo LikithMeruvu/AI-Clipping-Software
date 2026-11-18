@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from .captions import STYLES, Line, build_srt, group_words
 from .config import Settings
 from .dub import synthesize
+from .emoji import fetch_emoji_png, pick_emoji_events
 from .llm import LLM, LLMError, build_llm
 from .media import MediaError, pick_encoder, probe
 from .render import RenderJob, render_clip
@@ -62,6 +63,7 @@ class Options:
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True
+    emoji: bool = False
     progress_bar: bool = False
     track_faces: bool = True
     layout: str = "auto"
@@ -225,13 +227,19 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
                 warnings.append(f"translation/dub skipped for clip {i}: {exc}")
                 dub_wav = None
 
+        emojis = ()
+        if options.emoji and words:
+            found = [(e.start, e.end, fetch_emoji_png(e.emoji, settings.cache_dir / "emoji"))
+                     for e in pick_emoji_events(words)]
+            emojis = tuple((a, b, p) for a, b, p in found if p)
+
         stem = f"clip_{i:02d}_score{clip.score}"
         out = job_dir / f"{stem}.mp4"
         render_job = RenderJob(
             source=source.path, output=out, intervals=intervals, captions=lines, style=style,
             width=width, height=height, hook=clip.hook if options.hook else None,
             progress_bar=options.progress_bar, track_faces=options.track_faces, layout=options.layout,
-            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav,
+            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav, emojis=emojis,
             encoder=encoder, fonts_dir=fonts, models_dir=settings.models_dir,
             ffmpeg=settings.ffmpeg_bin, ffprobe=settings.ffprobe_bin,
         )

@@ -179,3 +179,18 @@ def test_decide_layout_split_only_for_persistent_side_by_side_faces():
 
 def test_sendcmd_script_supports_named_targets():
     assert sendcmd_script([(0.0, 4)], "crop@a") == "0.0000 crop@a x 4;\n"
+
+
+# ---------- emoji and dubbing helpers ----------
+
+def test_emoji_events_respect_spacing_and_cap():
+    from clipper.emoji import pick_emoji_events
+    ws = [Word(1, 1.2, "Money!"), Word(1.5, 1.7, "crazy"), Word(5, 5.2, "wow"), Word(9, 9.2, "fire")]
+    ev = pick_emoji_events(ws, max_events=2, min_gap=2.5)
+    assert [e.start for e in ev] == [1, 5]  # "crazy" too close to "money"; cap of 2 honoured
+
+
+def test_atempo_chain_splits_ratios_outside_supported_range():
+    from clipper.dub import atempo_chain
+    assert atempo_chain(1.25) == "atempo=1.2500"
+    assert atempo_chain(3.0).startswith("atempo=2.0,")
