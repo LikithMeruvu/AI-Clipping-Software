@@ -62,6 +62,7 @@ class Options:
     captions: bool = True
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
@@ -73,6 +74,8 @@ class Options:
             raise IngestError("need 5 <= min_seconds < max_seconds <= 180")
         if self.style not in STYLES:
             raise IngestError(f"unknown style {self.style!r}; choose one of {', '.join(STYLES)}")
+        if self.layout not in ("auto", "single", "split"):
+            raise IngestError("layout must be auto, single or split")
         if self.aspect not in ASPECTS:
             raise IngestError(f"unknown aspect {self.aspect!r}; choose one of {', '.join(ASPECTS)}")
 
@@ -220,7 +223,7 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
         render_job = RenderJob(
             source=source.path, output=out, intervals=intervals, captions=lines, style=style,
             width=width, height=height, hook=clip.hook if options.hook else None,
-            progress_bar=options.progress_bar, track_faces=options.track_faces,
+            progress_bar=options.progress_bar, track_faces=options.track_faces, layout=options.layout,
             bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo,
             encoder=encoder, fonts_dir=fonts, models_dir=settings.models_dir,
             ffmpeg=settings.ffmpeg_bin, ffprobe=settings.ffprobe_bin,
@@ -245,6 +248,7 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
             try:
                 res = fut.result()
                 meta["face_tracked"] = res.face_tracked
+                meta["layout"] = res.layout
                 meta["encoder"] = res.encoder
                 meta["duration"] = round(res.duration, 2)
                 rj.output.with_suffix(".srt").write_text(build_srt(rj.captions, style), encoding="utf-8")

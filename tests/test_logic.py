@@ -147,3 +147,35 @@ def test_valid_youtube_urls(url, vid):
 def test_rejected_urls(url):
     with pytest.raises(IngestError):
         validate_youtube_url(url)
+
+
+# ---------- active speaker and layout ----------
+
+def _two_faces(t, mouth_left, mouth_right):
+    return [FaceSample(t, 0.25, 0.5, 0.3, 1.0, mouth_left), FaceSample(t, 0.75, 0.5, 0.3, 1.0, mouth_right)]
+
+
+def test_active_speaker_camera_follows_whoever_talks_with_dwell_time():
+    from clipper.reframe import pick_track
+    samples = []
+    for i in range(40):  # 10 s at 0.25 s steps: left talks first half, right second half
+        t = i * 0.25
+        samples += _two_faces(t, 0.5 if t < 5 else 0.0, 0.0 if t < 5 else 0.5)
+    track = dict(pick_track(samples, 10.0))
+    assert track[2.0] == 0.25 and track[9.0] == 0.75
+    switches = sum(1 for a, b in zip(list(track.values()), list(track.values())[1:]) if a != b)
+    assert switches == 1  # no ping-pong
+
+
+def test_decide_layout_split_only_for_persistent_side_by_side_faces():
+    from clipper.reframe import decide_layout, pick_pair_tracks
+    both = [s for i in range(40) for s in _two_faces(i * 0.25, 0.1, 0.1)]
+    assert decide_layout(both, 10.0) == "split"
+    one = [FaceSample(i * 0.25, 0.5, 0.5, 0.3, 1.0) for i in range(40)]
+    assert decide_layout(one, 10.0) == "single"
+    left, right = pick_pair_tracks(both, 10.0)
+    assert left[5][1] == 0.25 and right[5][1] == 0.75
+
+
+def test_sendcmd_script_supports_named_targets():
+    assert sendcmd_script([(0.0, 4)], "crop@a") == "0.0000 crop@a x 4;\n"

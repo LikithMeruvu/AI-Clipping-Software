@@ -37,7 +37,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         num_clips=args.num, min_seconds=args.min, max_seconds=args.max, style=args.style,
         aspect=args.aspect, focus=args.focus, language=args.language, translate_to=args.translate,
         hook=not args.no_hook, remove_silence=not args.keep_silence, captions=not args.no_captions,
-        progress_bar=args.progress_bar, track_faces=not args.no_tracking,
+        layout=args.layout, progress_bar=args.progress_bar, track_faces=not args.no_tracking,
         bgm=Path(args.bgm) if args.bgm else None, bgm_volume=args.bgm_volume,
         logo=Path(args.logo) if args.logo else None,
     )
@@ -140,6 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--keep-silence", action="store_true", help="do not remove long pauses")
     run.add_argument("--no-hook", action="store_true", help="no hook headline at the top")
     run.add_argument("--no-captions", action="store_true", help="no burned-in captions")
+    run.add_argument("--layout", default="auto", choices=["auto", "single", "split"],
+                     help="split stacks two on-screen speakers; auto decides per clip")
     run.add_argument("--no-tracking", action="store_true", help="centre crop instead of face tracking")
     run.add_argument("--progress-bar", action="store_true", help="draw a progress bar along the bottom")
     run.add_argument("--bgm", help="background music file (ducked under speech)")

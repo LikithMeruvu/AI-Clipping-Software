@@ -56,6 +56,7 @@ class JobOptions(BaseModel):
     captions: bool = True
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"
 
 
 def _now() -> str:

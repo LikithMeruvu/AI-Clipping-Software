@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .captions import CaptionStyle, Line, build_ass
 from .media import MediaError, MediaInfo, probe, run_ffmpeg, video_encode_args
-from .reframe import analyse_speaker_path, sendcmd_script
+from .reframe import LayoutPlan, analyse_layout, sendcmd_script
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class RenderJob:
     hook: str | None = None
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"                      # auto | single | split
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
@@ -57,6 +58,7 @@ class RenderResult:
     duration: float
     face_tracked: bool
     encoder: str
+    layout: str = "center"
 
 
 def _filter_path(path: Path) -> str:
@@ -107,8 +109,7 @@ def _cut(job: RenderJob, out: Path, source: MediaInfo, fps: float) -> None:
     run_ffmpeg(args, timeout=900)
 
 
-def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
-           track: tuple[int, int, int, list[tuple[float, int]]] | None) -> None:
+def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: LayoutPlan | None) -> None:
     W, H = job.width, job.height
     inputs = ["-i", str(cut)]
     next_input = 1
@@ -122,10 +123,20 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
         logo_idx = next_input
 
     chain: list[str] = []
-    if track is not None:
-        _, crop_w, src_h, points = track
-        (work / "cmds.txt").write_text(sendcmd_script(points), encoding="utf-8")
-        chain.append(f"[0:v]sendcmd=f=cmds.txt,crop=w={crop_w}:h={src_h}:x=0:y=0")
+    pre: list[str] = []  # graph pieces that must come before the main chain (split layout)
+    if plan is not None and plan.mode == "split" and plan.points2:
+        (work / "cmds_a.txt").write_text(sendcmd_script(plan.points, "crop@a"), encoding="utf-8")
+        (work / "cmds_b.txt").write_text(sendcmd_script(plan.points2, "crop@b"), encoding="utf-8")
+        half = H // 2
+        for tag, name in (("a", "top"), ("b", "bot")):
+            pre.append(f"[sp{tag}]sendcmd=f=cmds_{tag}.txt,crop@{tag}=w={plan.crop_w}:h={plan.src_h}:x=0:y=0,"
+                       f"scale={W}:{half}:flags=lanczos[{name}]")
+        pre.insert(0, "[0:v]split=2[spa][spb]")
+        pre.append("[top][bot]vstack=inputs=2[stack]")
+        chain.append("[stack]null")
+    elif plan is not None:
+        (work / "cmds.txt").write_text(sendcmd_script(plan.points), encoding="utf-8")
+        chain.append(f"[0:v]sendcmd=f=cmds.txt,crop=w={plan.crop_w}:h={plan.src_h}:x=0:y=0")
         chain.append(f"scale={W}:{H}:flags=lanczos")
     elif cut_info.width / cut_info.height > W / H:
         crop_w = int(round(cut_info.height * W / H)) & ~1
@@ -147,7 +158,7 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
     chain.append(ass_opts)
     chain.append("format=yuv420p")
 
-    graph: list[str] = [",".join(chain) + "[vcap]"]
+    graph: list[str] = [*pre, ",".join(chain) + "[vcap]"]
     if logo_idx is not None:
         graph.append(f"[{logo_idx}:v]scale=iw*0.16:-1,format=rgba[logo]")
         graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vout]")
@@ -184,16 +195,16 @@ def render_clip(job: RenderJob) -> RenderResult:
         _cut(job, cut, source, fps)
         cut_info = probe(cut, job.ffprobe)
 
-        track = None
+        plan = None
         if job.track_faces:
             try:
-                track = analyse_speaker_path(cut, cut_info.duration, job.width / job.height, fps, job.models_dir)
+                plan = analyse_layout(cut, cut_info.duration, job.width, job.height, fps, job.models_dir, job.layout)
             except Exception as exc:  # tracking is an enhancement; never fail a clip because of it
                 log.warning("face tracking unavailable, using centre crop: %s", exc)
 
-        _final(job, work, cut, cut_info, track)
+        _final(job, work, cut, cut_info, plan)
 
     if not job.output.exists() or job.output.stat().st_size == 0:
         raise MediaError(f"render produced no output for {job.output.name}")
     final = probe(job.output, job.ffprobe)
-    return RenderResult(job.output, final.duration, track is not None, job.encoder)
+    return RenderResult(job.output, final.duration, plan is not None, job.encoder, plan.mode if plan else "center")
