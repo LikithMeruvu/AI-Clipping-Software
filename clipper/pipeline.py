@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, Field
 
+from .broll import fetch_broll, plan_broll
 from .captions import STYLES, Line, build_srt, group_words
 from .config import Settings
 from .dub import synthesize
@@ -64,6 +65,7 @@ class Options:
     remove_silence: bool = True
     captions: bool = True
     emoji: bool = False
+    broll: bool = False                  # needs PEXELS_API_KEY
     progress_bar: bool = False
     track_faces: bool = True
     layout: str = "auto"
@@ -227,6 +229,22 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
                 warnings.append(f"translation/dub skipped for clip {i}: {exc}")
                 dub_wav = None
 
+        broll_cuts: tuple = ()
+        if options.broll and llm is not None and words and lines:
+            if not settings.pexels_api_key:
+                warnings.append("B-roll requested but PEXELS_API_KEY is not set")
+            else:
+                try:
+                    texts = [(ln.start, ln.end, ln.text or " ".join(w.text for w in ln.words or ())) for ln in lines]
+                    got = []
+                    for item in plan_broll(llm, texts, timemap.duration):
+                        path = fetch_broll(item.query, settings.pexels_api_key.get_secret_value(),
+                                           settings.cache_dir / "broll")
+                        if path:
+                            got.append((item.start, item.start + item.duration, path))
+                    broll_cuts = tuple(got)
+                except Exception as exc:
+                    warnings.append(f"B-roll skipped for clip {i}: {exc}")
         emojis = ()
         if options.emoji and words:
             found = [(e.start, e.end, fetch_emoji_png(e.emoji, settings.cache_dir / "emoji"))
@@ -239,7 +257,7 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
             source=source.path, output=out, intervals=intervals, captions=lines, style=style,
             width=width, height=height, hook=clip.hook if options.hook else None,
             progress_bar=options.progress_bar, track_faces=options.track_faces, layout=options.layout,
-            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav, emojis=emojis,
+            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav, emojis=emojis, broll=broll_cuts,
             encoder=encoder, fonts_dir=fonts, models_dir=settings.models_dir,
             ffmpeg=settings.ffmpeg_bin, ffprobe=settings.ffprobe_bin,
         )

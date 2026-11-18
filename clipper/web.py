@@ -56,6 +56,7 @@ class JobOptions(BaseModel):
     remove_silence: bool = True
     captions: bool = True
     emoji: bool = False
+    broll: bool = False
     progress_bar: bool = False
     track_faces: bool = True
     layout: str = "auto"

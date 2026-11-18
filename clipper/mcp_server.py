@@ -85,7 +85,8 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                    style: str = "hormozi", aspect: str = "9:16", focus: str | None = None,
                    translate_to: str | None = None, hook: bool = True, remove_silence: bool = True,
                    progress_bar: bool = False, layout: str = "auto",
-                   dub_to: str | None = None, emoji: bool = False) -> dict[str, str]:
+                   dub_to: str | None = None, emoji: bool = False,
+                   broll: bool = False) -> dict[str, str]:
         """Automatically find the best moments in a video and render finished captioned clips.
 
         source: YouTube URL or absolute path to a local video file.
@@ -95,7 +96,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
         """
         opts = options_from(num_clips=num_clips, min_seconds=min_seconds, max_seconds=max_seconds, style=style,
                             aspect=aspect, focus=focus, translate_to=translate_to, hook=hook,
-                            remove_silence=remove_silence, progress_bar=progress_bar, layout=layout, dub_to=dub_to, emoji=emoji)
+                            remove_silence=remove_silence, progress_bar=progress_bar, layout=layout, dub_to=dub_to, emoji=emoji, broll=broll)
         return {"job_id": submit("clip_video", lambda d, p: process(source, opts, settings, d, p))}
 
     @mcp.tool()

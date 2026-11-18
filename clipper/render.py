@@ -45,6 +45,7 @@ class RenderJob:
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
+    broll: tuple[tuple[float, float, Path], ...] = ()    # (start, end, mp4) stock footage under the captions
     emojis: tuple[tuple[float, float, Path], ...] = ()   # (start, end, png) pop-ups above the captions
     dub: Path | None = None                   # translated speech (wav) mixed over the ducked original
     encoder: str = "libx264"
@@ -124,6 +125,11 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
         inputs += ["-loop", "1", "-i", str(job.logo)]
         logo_idx = next_input
         next_input += 1
+    broll_idx = []
+    for _, _, clip_path in job.broll:
+        inputs += ["-stream_loop", "-1", "-i", str(clip_path)]
+        broll_idx.append(next_input)
+        next_input += 1
     emoji_idx = []
     for _, _, png in job.emojis:
         inputs += ["-loop", "1", "-i", str(png)]
@@ -157,6 +163,13 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
     else:
         chain.append(f"[0:v]scale={W}:-2:flags=lanczos,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black")
     chain.append("setsar=1")
+    graph: list[str] = [*pre, ",".join(chain) + "[vsc]"]
+    cur = "vsc"  # B-roll goes under the captions, so it is overlaid before the ass filter
+    for n, ((bs, be, _), idx) in enumerate(zip(job.broll, broll_idx, strict=False)):
+        graph.append(f"[{idx}:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,"
+                     f"fps=30,format=yuv420p,setpts=PTS-STARTPTS+{bs:.2f}/TB[br{n}]")
+        graph.append(f"[{cur}][br{n}]overlay=eof_action=pass:enable='between(t,{bs:.2f},{be:.2f})'[bo{n}]")
+        cur = f"bo{n}"
 
     ass_name = "captions.ass"
     (work / ass_name).write_text(
@@ -167,10 +180,7 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: Lay
     ass_opts = f"ass={ass_name}"
     if job.fonts_dir:
         ass_opts += f":fontsdir={_filter_path(job.fonts_dir)}"
-    chain.append(ass_opts)
-    chain.append("format=yuv420p")
-
-    graph: list[str] = [*pre, ",".join(chain) + "[vcap]"]
+    graph.append(f"[{cur}]{ass_opts},format=yuv420p[vcap]")
     if logo_idx is not None:
         graph.append(f"[{logo_idx}:v]scale=iw*0.16:-1,format=rgba[logo]")
         graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vbase]")

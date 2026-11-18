@@ -36,7 +36,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     options = Options(
         num_clips=args.num, min_seconds=args.min, max_seconds=args.max, style=args.style,
         aspect=args.aspect, focus=args.focus, language=args.language, translate_to=args.translate, dub_to=args.dub,
-        hook=not args.no_hook, emoji=args.emoji, remove_silence=not args.keep_silence, captions=not args.no_captions,
+        hook=not args.no_hook, emoji=args.emoji, broll=args.broll, remove_silence=not args.keep_silence, captions=not args.no_captions,
         layout=args.layout, progress_bar=args.progress_bar, track_faces=not args.no_tracking,
         bgm=Path(args.bgm) if args.bgm else None, bgm_volume=args.bgm_volume,
         logo=Path(args.logo) if args.logo else None,
@@ -139,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--translate", metavar="LANGUAGE", help="translate captions, e.g. Spanish")
     run.add_argument("--dub", metavar="LANGUAGE", help="AI voice-over in this language (Gemini TTS)")
     run.add_argument("--emoji", action="store_true", help="pop up emoji on trigger words")
+    run.add_argument("--broll", action="store_true", help="AI-placed stock B-roll (needs PEXELS_API_KEY)")
     run.add_argument("--keep-silence", action="store_true", help="do not remove long pauses")
     run.add_argument("--no-hook", action="store_true", help="no hook headline at the top")
     run.add_argument("--no-captions", action="store_true", help="no burned-in captions")

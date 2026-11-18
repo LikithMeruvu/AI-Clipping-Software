@@ -194,3 +194,59 @@ def test_atempo_chain_splits_ratios_outside_supported_range():
     from clipper.dub import atempo_chain
     assert atempo_chain(1.25) == "atempo=1.2500"
     assert atempo_chain(3.0).startswith("atempo=2.0,")
+
+
+# ---------- B-roll ----------
+
+def test_pick_video_file_prefers_hd_portrait_mp4():
+    from clipper.broll import pick_video_file
+    payload = {"videos": [{"video_files": [
+        {"file_type": "video/mp4", "width": 360, "height": 640, "link": "low"},
+        {"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "hd"},
+        {"file_type": "video/webm", "width": 1080, "height": 1920, "link": "webm"}]}]}
+    assert pick_video_file(payload) == "hd"
+    assert pick_video_file({"videos": []}) is None
+
+
+def test_plan_broll_enforces_rules():
+    from clipper.broll import BrollPlan, plan_broll
+    plan = BrollPlan.model_validate({"items": [
+        {"start": 0.5, "duration": 2, "query": "too early"},
+        {"start": 5, "duration": 9, "query": "city"},          # duration clamped to 3
+        {"start": 6, "duration": 2, "query": "overlaps"},       # < 3 s after the previous one
+        {"start": 28, "duration": 2, "query": "too late"}]})
+    got = plan_broll(FakeLLM(plan), [(0, 30, "x")], clip_seconds=30)
+    assert [(g.query, g.duration) for g in got] == [("city", 3.0)]
+
+
+def test_fetch_broll_downloads_once_and_survives_failure(tmp_path):
+    import io
+    import json
+
+    from clipper.broll import fetch_broll
+
+    calls = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def opener(req, timeout=0):
+        url = getattr(req, "full_url", req)
+        calls.append(url)
+        if "api.pexels" in url:
+            return Resp(json.dumps({"videos": [{"video_files": [
+                {"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "https://cdn/x.mp4"}]}]}).encode())
+        return Resp(b"VIDEO")
+
+    path = fetch_broll("city", "key", tmp_path, opener)
+    assert path and path.read_bytes() == b"VIDEO"
+    assert fetch_broll("city", "key", tmp_path, opener) == path and len(calls) == 2  # cached second time
+
+    def boom(*a, **k):
+        raise OSError("offline")
+
+    assert fetch_broll("other", "key", tmp_path, boom) is None

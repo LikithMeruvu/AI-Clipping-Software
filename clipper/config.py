@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None  # openai provider; optional for local servers
     gemini_api_key: SecretStr | None = None  # GEMINI_API_KEY
 
+    pexels_api_key: SecretStr | None = None  # PEXELS_API_KEY, enables --broll
+
     # --- transcription ---
     whisper_model: str = "large-v3-turbo"  # use "small" or "base" on CPU
     whisper_device: Literal["auto", "cuda", "cpu"] = "auto"
