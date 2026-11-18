@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Clipping Studio</title>
+  <style>
+    :root {
+      --bg: #f6f7fb; --card: #ffffff; --ink: #14161f; --muted: #6b7180; --line: #e3e6ef;
+      --accent: #6d5efc; --accent-ink: #ffffff; --ok: #14915a; --bad: #c2362f; --warn: #b07a00;
+      --radius: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0d0f16; --card: #161924; --ink: #eef0f7; --muted: #9aa1b5; --line: #262b3b;
+        --accent: #8b7dff; --accent-ink: #0d0f16; --ok: #39c884; --bad: #ff6b63; --warn: #f2b84b;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0d0f16; --card: #161924; --ink: #eef0f7; --muted: #9aa1b5; --line: #262b3b;
+      --accent: #8b7dff; --accent-ink: #0d0f16; --ok: #39c884; --bad: #ff6b63; --warn: #f2b84b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    header { padding: 20px 16px 8px; max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+    header small { color: var(--muted); }
+    main { max-width: 1180px; margin: 0 auto; padding: 8px 16px 48px; display: grid; gap: 18px; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit;
+    }
+    textarea { min-height: 60px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .toggles label { display: flex; align-items: center; gap: 8px; color: var(--ink); margin: 0; font-size: 14px; }
+    .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+    .drop.over { border-color: var(--accent); color: var(--ink); }
+    button { font: inherit; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .submit { width: 100%; margin-top: 16px; }
+    .job { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; background: var(--bg); }
+    .job-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .status { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+    .status.done { color: var(--ok); border-color: var(--ok); }
+    .status.failed { color: var(--bad); border-color: var(--bad); }
+    .status.running, .status.queued { color: var(--accent); border-color: var(--accent); }
+    .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
+    .bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .4s ease; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .warn { color: var(--warn); font-size: 13px; margin: 6px 0; }
+    .error { color: var(--bad); font-size: 13px; white-space: pre-wrap; }
+    .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; }
+    .clip { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card); display: flex; flex-direction: column; }
+    .clip video { width: 100%; aspect-ratio: 9 / 16; background: #000; object-fit: contain; }
+    .clip .body { padding: 10px; display: grid; gap: 6px; }
+    .clip .title { font-weight: 600; font-size: 14px; }
+    .clip .tags { font-size: 12px; color: var(--muted); }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .actions button, .actions a { font-size: 12px; padding: 6px 9px; }
+    .actions a { color: var(--ink); border: 1px solid var(--line); border-radius: 10px; text-decoration: none; }
+    .pill { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--line); color: var(--muted); }
+    .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>AI Clipping Studio</h1>
+    <small id="version">loading…</small>
+  </div>
+  <div class="actions">
+    <button class="ghost" id="themeBtn" type="button" title="Toggle theme">Theme</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>New job</h2>
+    <form id="form">
+      <label for="url">YouTube URL</label>
+      <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=…">
+      <label>…or drop a video file</label>
+      <div class="drop" id="drop">
+        <div id="dropText">Drag a video here or click to choose (mp4, mov, mkv, webm)</div>
+        <input type="file" id="file" accept="video/*" hidden>
+      </div>
+
+      <div class="row">
+        <div><label for="num">Clips</label><input type="number" id="num" min="1" max="30" value="5"></div>
+        <div><label for="aspect">Aspect</label><select id="aspect"></select></div>
+      </div>
+      <div class="row">
+        <div><label for="min">Min seconds</label><input type="number" id="min" min="5" max="180" value="20"></div>
+        <div><label for="max">Max seconds</label><input type="number" id="max" min="5" max="180" value="60"></div>
+      </div>
+      <label for="style">Caption style</label>
+      <select id="style"></select>
+      <label for="focus">Focus (optional)</label>
+      <textarea id="focus" placeholder="e.g. the funniest moments about startups"></textarea>
+      <div class="row">
+        <div><label for="translate">Translate captions to</label><input type="text" id="translate" placeholder="e.g. Spanish"></div>
+        <div><label for="language">Source language</label><input type="text" id="language" placeholder="auto"></div>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="hook" checked> Hook headline</label>
+        <label><input type="checkbox" id="captions" checked> Captions</label>
+        <label><input type="checkbox" id="remove_silence" checked> Cut long pauses</label>
+        <label><input type="checkbox" id="track_faces" checked> Face tracking</label>
+        <label><input type="checkbox" id="progress_bar"> Progress bar</label>
+      </div>
+      <div id="tokenRow" hidden>
+        <label for="token">API token</label>
+        <input type="text" id="token" placeholder="Bearer token from the server's API_TOKEN">
+      </div>
+      <button class="submit" id="submit" type="submit">Create clips</button>
+      <p class="error" id="formError"></p>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Jobs</h2>
+    <div id="jobs"><div class="empty">No jobs yet. Paste a link or drop a video to start.</div></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const state = { file: null, token: sessionStorage.getItem("clipper_token") || "", timer: null };
+
+  const headers = () => (state.token ? { Authorization: "Bearer " + state.token } : {});
+  const api = async (path, opts = {}) => {
+    const res = await fetch(path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } });
+    if (res.status === 401) { $("tokenRow").hidden = false; throw new Error("API token required"); }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || ("HTTP " + res.status));
+    return body;
+  };
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function loadHealth() {
+    try {
+      const h = await fetch("/api/health").then((r) => r.json());
+      $("version").textContent = `v${h.version} · LLM ${h.llm}`;
+      $("aspect").innerHTML = h.aspects.map((a) => `<option ${a === "9:16" ? "selected" : ""}>${a}</option>`).join("");
+      const styles = Object.entries(h.styles);
+      $("style").innerHTML = styles.map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+    } catch (e) { $("version").textContent = "server unreachable"; }
+  }
+
+  function bindDrop() {
+    const drop = $("drop");
+    drop.addEventListener("click", () => $("file").click());
+    $("file").addEventListener("change", (e) => setFile(e.target.files[0]));
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
+  }
+  function setFile(file) {
+    state.file = file || null;
+    $("dropText").textContent = file ? `${file.name} (${(file.size / 1048576).toFixed(1)} MB)` : "Drag a video here or click to choose";
+  }
+
+  function options() {
+    return {
+      num_clips: +$("num").value, min_seconds: +$("min").value, max_seconds: +$("max").value,
+      style: $("style").value, aspect: $("aspect").value, focus: $("focus").value.trim() || null,
+      language: $("language").value.trim() || null, translate_to: $("translate").value.trim() || null,
+      hook: $("hook").checked, captions: $("captions").checked, remove_silence: $("remove_silence").checked,
+      track_faces: $("track_faces").checked, progress_bar: $("progress_bar").checked,
+    };
+  }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("formError").textContent = "";
+    const url = $("url").value.trim();
+    if (!url && !state.file) { $("formError").textContent = "Add a YouTube URL or choose a video file."; return; }
+    if (state.token !== ($("token").value || state.token)) {}
+    if (!$("tokenRow").hidden && $("token").value) { state.token = $("token").value; sessionStorage.setItem("clipper_token", state.token); }
+    const body = new FormData();
+    if (state.file) body.append("file", state.file); else body.append("url", url);
+    body.append("options", JSON.stringify(options()));
+    $("submit").disabled = true;
+    try {
+      await api("/api/jobs", { method: "POST", body });
+      await refresh();
+    } catch (err) {
+      $("formError").textContent = err.message;
+    } finally {
+      $("submit").disabled = false;
+    }
+  });
+
+  function clipCard(jobId, c) {
+    const tags = (c.hashtags || []).join(" ");
+    const meta = [c.title, c.description, tags].filter(Boolean).join("\n\n");
+    const ok = c.status === "ok";
+    if (!ok) return `<div class="clip"><div class="body"><span class="pill">clip ${c.index}</span><div class="error">${esc(c.error || "failed")}</div></div></div>`;
+    return `
+      <div class="clip">
+        <video src="${esc(c.url)}" controls preload="metadata" playsinline></video>
+        <div class="body">
+          <div class="title">${esc(c.title)}</div>
+          <div class="muted">Hook: ${esc(c.hook)}</div>
+          <div class="tags"><span class="pill">score ${c.score}</span> <span class="pill">${c.duration.toFixed(1)}s</span> ${c.face_tracked ? '<span class="pill">face tracked</span>' : ""} <span class="pill">${esc(c.selection)}</span></div>
+          <div class="tags">${esc(tags)}</div>
+          <div class="actions">
+            <a href="${esc(c.url)}" download>MP4</a>
+            <a href="${esc(c.srt_url)}" download>SRT</a>
+            <button class="ghost" type="button" data-copy="${esc(meta)}">Copy text</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function jobCard(job) {
+    const pct = Math.round((job.progress || 0) * 100);
+    const m = job.manifest;
+    const warnings = m && m.warnings && m.warnings.length ? `<div class="warn">${m.warnings.map(esc).join("<br>")}</div>` : "";
+    const clips = m ? `<div class="clips">${m.clips.map((c) => clipCard(job.id, c)).join("")}</div>` : "";
+    return `
+      <div class="job">
+        <div class="job-head">
+          <strong>${esc(job.source)}</strong>
+          <span class="status ${esc(job.status)}">${esc(job.status)}</span>
+        </div>
+        <div class="muted">${esc(job.message || "")} · ${esc(job.created || "")}</div>
+        ${job.status === "running" || job.status === "queued" ? `<div class="bar"><div style="width:${pct}%"></div></div>` : ""}
+        ${job.error ? `<div class="error">${esc(job.error)}</div>` : ""}
+        ${warnings}
+        ${clips}
+      </div>`;
+  }
+
+  async function refresh() {
+    try {
+      const jobs = await api("/api/jobs");
+      if (!jobs.length) { $("jobs").innerHTML = '<div class="empty">No jobs yet. Paste a link or drop a video to start.</div>'; }
+      else {
+        const full = await Promise.all(jobs.slice(0, 15).map((j) => api(`/api/jobs/${j.id}`)));
+        $("jobs").innerHTML = full.map(jobCard).join("");
+      }
+      const active = jobs.some((j) => j.status === "queued" || j.status === "running");
+      clearTimeout(state.timer);
+      if (active) state.timer = setTimeout(refresh, 1500);
+    } catch (err) {
+      $("jobs").innerHTML = `<div class="error">${esc(err.message)}</div>`;
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-copy]");
+    if (btn) navigator.clipboard?.writeText(btn.dataset.copy).then(() => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy text"), 1200); });
+  });
+  $("themeBtn").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.dataset.theme = dark ? "light" : "dark";
+  });
+
+  bindDrop();
+  loadHealth().then(refresh);
+  $("token").value = state.token;
+})();
+</script>
+</body>
+</html>

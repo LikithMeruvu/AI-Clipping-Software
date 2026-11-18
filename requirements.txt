@@ -1,18 +1,14 @@
-# Runtime dependencies for the original (v1) pipeline, pinned to the versions it was tested with.
-# Install into a virtual environment:  pip install -r requirements.txt
-#
-# Notes
-# - mediapipe is pinned to 0.10.21: it is the last line that still ships mp.solutions,
-#   which services/face_tracker.py uses. Newer releases removed it.
-# - moviepy is pinned below 2.0: the code imports moviepy.editor, which moviepy 2 removed.
-# - torch is not needed: GPU detection uses ctranslate2, which faster-whisper already installs.
-# - ffmpeg is bundled through imageio-ffmpeg (a moviepy dependency); no system install needed.
-faster-whisper==1.2.1
-google-generativeai==0.8.6
-moviepy==1.0.3
-mediapipe==0.10.21
-numpy==1.26.4
-opencv-python-headless==4.11.0.86
-pillow>=10.0
-pytubefix==11.2.1
-python-dotenv>=1.0
+# Runtime dependencies (Python 3.10+). ffmpeg must also be installed and on PATH.
+faster-whisper>=1.2,<2
+google-genai>=3.0,<4
+openai>=2.0            # only used for the OpenAI-compatible LLM provider
+yt-dlp>=2026.1
+opencv-python-headless>=4.8
+mediapipe>=1.2
+numpy>=1.26
+pydantic>=2.7
+pydantic-settings>=2.3
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+mcp>=2.0,<3
