@@ -136,3 +136,10 @@ temp_files/
 *.mp4
 *.m4a
 clips/
+
+# v2 runtime data
+data/
+output/
+.venv/
+.pytest_cache/
+.ruff_cache/
