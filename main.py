@@ -9,7 +9,9 @@ from styles.caption_styles import CAPTION_STYLES
 from config import OUTPUT_DIR, TEMP_DIR
 
 # Ensure output is not buffered
-sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+# Windows consoles default to cp1252, which cannot print the emoji used in log lines.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True, encoding='utf-8', errors='replace')
 
 # Function to print with immediate flush
 def log(message):
@@ -114,6 +116,9 @@ def main(url=None):
         time.sleep(0.5)
         
         outputs, title = processor.process_video(url, num_clips, min_duration, max_duration)
+        if not outputs:
+            log("❌ No clips were produced. See the errors above.")
+            raise SystemExit(1)
 
         log("\n" + "="*70)
         log("🎉 VIRAL CLIPS GENERATED!")

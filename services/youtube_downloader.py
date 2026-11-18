@@ -1,9 +1,10 @@
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-# Replace pytube with pytubefix
+# pytubefix is the maintained fork of pytube
 from pytubefix import YouTube
 from pytubefix.exceptions import PytubeFixError
 
@@ -14,70 +15,51 @@ class YouTubeDownloader:
     """
     Handles the downloading of YouTube videos.
 
-    This class uses the pytubefix library to download a YouTube video
-    and prepares it for further processing.
+    YouTube no longer offers muxed (audio+video) streams above 360p. Those videos
+    are fetched as separate video and audio streams and muxed with ffmpeg. Without
+    the audio track, transcription fails, so this matters for most videos.
     """
     def __init__(self, temp_dir=TEMP_DIR):
-        """
-        Initializes the YouTubeDownloader.
-
-        Args:
-            temp_dir (Path, optional): The directory to save temporary files.
-                                       Defaults to TEMP_DIR from config.
-        """
         self.temp_dir = temp_dir
-        
+
     def _sanitize_filename(self, filename):
-        """
-        Sanitizes a filename by removing invalid characters.
-
-        Args:
-            filename (str): The filename to sanitize.
-
-        Returns:
-            str: The sanitized filename.
-        """
         if not filename:
             return "unknown_title"
-            
-        # Replace characters that are problematic in filenames
         invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
         for char in invalid_chars:
             filename = filename.replace(char, '_')
-            
-        # Limit filename length to avoid path too long errors
         if len(filename) > 100:
             filename = filename[:97] + '...'
-            
         return filename
 
     @staticmethod
     def get_video_id(url):
-        """
-        Extracts the video ID from a YouTube URL.
-
-        Args:
-            url (str): The YouTube URL.
-
-        Returns:
-            str: The video ID, or None if not found.
-        """
         if 'youtu.be' in url:
             return url.split('/')[-1].split('?')[0]
         if 'youtube.com' in url:
             return parse_qs(urlparse(url).query).get('v', [None])[0]
         return None
 
+    @staticmethod
+    def _ffmpeg_exe():
+        """Use the ffmpeg binary bundled with moviepy's imageio-ffmpeg dependency."""
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+
+    def _mux(self, video_file, audio_file, out_file):
+        result = subprocess.run(
+            [self._ffmpeg_exe(), "-y", "-loglevel", "error", "-i", video_file, "-i", audio_file,
+             "-c", "copy", out_file],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if result.returncode != 0 or not os.path.exists(out_file):
+            raise RuntimeError(f"ffmpeg could not mux audio and video: {result.stderr.strip()[-300:]}")
+        return out_file
+
     def download(self, url):
         """
-        Downloads a YouTube video from the given URL.
-
-        Args:
-            url (str): The URL of the YouTube video.
-
-        Returns:
-            tuple: A tuple containing the path to the downloaded video,
-                   the video title, and its duration.
+        Downloads a YouTube video and returns (path, title, duration).
+        The returned mp4 always contains an audio track when the video has one.
         """
         print(f"🔗 Processing YouTube URL: {url}")
         video_id = self.get_video_id(url)
@@ -85,98 +67,51 @@ class YouTubeDownloader:
             raise ValueError("Invalid YouTube URL provided.")
         print(f"✅ Extracted video ID: {video_id}")
 
-        # Ensure temp directory exists
         os.makedirs(self.temp_dir, exist_ok=True)
-        print(f"✅ Temporary directory ready: {self.temp_dir}")
-        
-        # Set up output path - use absolute path to avoid any path issues
         output_path = os.path.abspath(str(self.temp_dir))
         output_filename = f"{video_id}.mp4"
-        print(f"📂 Output will be saved to: {os.path.join(output_path, output_filename)}")
-        
+        final_path = os.path.join(output_path, output_filename)
+
         try:
-            # Create YouTube object with custom options
-            # Note: pytube doesn't directly support setting user agent via class attributes
-            # We'll just create the YouTube object normally
-            
-            print(f"Downloading YouTube video with ID: {video_id}")
-            print(f"⏳ Fetching video metadata...")
-            # Create YouTube object
+            print("⏳ Fetching video metadata...")
             yt = YouTube(url)
-            print(f"✅ Connected to YouTube API successfully")
-            
-            # Get video information and sanitize title
             title = self._sanitize_filename(yt.title)
             duration = yt.length
-            
             print(f"Video title: {title}")
             print(f"Video duration: {duration} seconds ({duration//60}m {duration%60}s)")
-            print(f"Video author: {yt.author}")
-            print(f"⏳ Selecting best quality stream...")
-            
-            # First try to get progressive stream (combined audio and video)
-            stream = (
-                yt.streams
-                .filter(progressive=True, file_extension='mp4')
-                .order_by('resolution')
-                .desc()
-                .first()
+
+            progressive = (
+                yt.streams.filter(progressive=True, file_extension='mp4')
+                .order_by('resolution').desc().first()
             )
-            
-            # If no suitable progressive stream is found, try adaptive stream
-            if not stream:
-                print("⚠️ No progressive stream found, trying adaptive stream")
-                stream = (
-                    yt.streams
-                    .filter(file_extension='mp4')
-                    .order_by('resolution')
-                    .desc()
-                    .first()
+            if progressive:
+                print(f"Selected muxed stream: {progressive.resolution}")
+                video_path = progressive.download(output_path=output_path, filename=output_filename)
+            else:
+                video_stream = (
+                    yt.streams.filter(adaptive=True, only_video=True, file_extension='mp4')
+                    .order_by('resolution').desc().first()
                 )
-            
-            if not stream:
-                raise ValueError("No suitable video stream found")
-            
-            print(f"Selected stream: {stream.resolution}, {stream.mime_type}")
-            print(f"Stream itag: {stream.itag}, File size: {stream.filesize/(1024*1024):.1f} MB")
-            print(f"⏳ Starting download (this may take a while)...")
-            
-            # Download the video with error handling
-            try:
-                print(f"⏳ Downloading video to {output_path}...")
-                video_path = stream.download(output_path=output_path, filename=output_filename)
-                
-                # Verify the file exists and has content
-                if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
-                    raise FileNotFoundError(f"Downloaded file is missing or empty: {video_path}")
-                
-                file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-                print(f"✅ Download complete! File size: {file_size_mb:.2f} MB")
-                    
-                # Convert to Path object for consistency with the rest of the code
-                video_path = Path(video_path)
-                print(f"Download complete: {video_path}")
-            except OSError as e:
-                # Handle specific OS errors like invalid characters in filename
-                print(f"OS Error during download: {e}")
-                # Create a temporary file with a safe name
-                temp_file = os.path.join(output_path, f"youtube_video_{video_id}.mp4")
-                video_path = stream.download(output_path=output_path, filename=f"youtube_video_{video_id}.mp4")
-                video_path = Path(video_path)
-                print(f"Download complete with safe filename: {video_path}")
-            
-            return video_path, title, duration
-            
+                audio_stream = (
+                    yt.streams.filter(adaptive=True, only_audio=True)
+                    .order_by('abr').desc().first()
+                )
+                if not video_stream or not audio_stream:
+                    raise ValueError("No suitable video and audio streams found")
+                print(f"Selected video stream: {video_stream.resolution}; audio: {audio_stream.abr}")
+                v_file = video_stream.download(output_path=output_path, filename=f"v_{video_id}.mp4")
+                a_file = audio_stream.download(output_path=output_path, filename=f"a_{video_id}.m4a")
+                video_path = self._mux(v_file, a_file, final_path)
+                for part in (v_file, a_file):
+                    if os.path.exists(part):
+                        os.remove(part)
+
+            if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+                raise FileNotFoundError(f"Downloaded file is missing or empty: {video_path}")
+            print(f"✅ Download complete! File size: {os.path.getsize(video_path) / (1024 * 1024):.2f} MB")
+            return Path(video_path), title, duration
+
         except PytubeFixError as e:
-            print(f"PytubeFixError: {str(e)}")
             raise Exception(f"Failed to download video: {str(e)}")
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
             raise Exception(f"Unexpected error during download: {str(e)}")
-
-        # This should never be reached, but just in case
-        video_path = Path(output_path) / output_filename
-        if not video_path.exists():
-            raise FileNotFoundError("Failed to download the video file.")
-
-        return video_path, "Unknown Title", 0
