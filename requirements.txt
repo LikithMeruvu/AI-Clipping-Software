@@ -12,3 +12,5 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 mcp>=2.0,<3
+google-api-python-client>=2.100   # YouTube publishing (optional feature)
+google-auth-oauthlib>=1.2

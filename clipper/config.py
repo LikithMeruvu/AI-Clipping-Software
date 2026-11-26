@@ -20,9 +20,14 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None  # openai provider; optional for local servers
     gemini_api_key: SecretStr | None = None  # GEMINI_API_KEY
 
+    pexels_api_key: SecretStr | None = None  # PEXELS_API_KEY, enables --broll
+
     # --- transcription ---
     whisper_model: str = "large-v3-turbo"  # use "small" or "base" on CPU
     whisper_device: Literal["auto", "cuda", "cpu"] = "auto"
+
+    tts_model: str = "gemini-2.5-flash-preview-tts"  # used by AI dubbing
+    tts_voice: str = "Kore"
 
     # --- rendering ---
     ffmpeg_bin: str = "ffmpeg"
@@ -30,6 +35,8 @@ class Settings(BaseSettings):
     encoder: Literal["auto", "h264_nvenc", "libx264"] = "auto"
     render_workers: int = Field(default=2, ge=1, le=8)
     fonts_dir: Path | None = None  # defaults to the OS font directory when unset
+
+    youtube_client_secrets: Path | None = None  # OAuth desktop client JSON for publishing
 
     # --- storage ---
     data_dir: Path = Path("data")

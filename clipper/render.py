@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .captions import CaptionStyle, Line, build_ass
 from .media import MediaError, MediaInfo, probe, run_ffmpeg, video_encode_args
-from .reframe import analyse_speaker_path, sendcmd_script
+from .reframe import LayoutPlan, analyse_layout, sendcmd_script
 
 log = logging.getLogger(__name__)
 
@@ -41,9 +41,13 @@ class RenderJob:
     hook: str | None = None
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"                      # auto | single | split
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
+    broll: tuple[tuple[float, float, Path], ...] = ()    # (start, end, mp4) stock footage under the captions
+    emojis: tuple[tuple[float, float, Path], ...] = ()   # (start, end, png) pop-ups above the captions
+    dub: Path | None = None                   # translated speech (wav) mixed over the ducked original
     encoder: str = "libx264"
     fonts_dir: Path | None = None
     models_dir: Path = Path("data/models")
@@ -57,6 +61,7 @@ class RenderResult:
     duration: float
     face_tracked: bool
     encoder: str
+    layout: str = "center"
 
 
 def _filter_path(path: Path) -> str:
@@ -107,8 +112,7 @@ def _cut(job: RenderJob, out: Path, source: MediaInfo, fps: float) -> None:
     run_ffmpeg(args, timeout=900)
 
 
-def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
-           track: tuple[int, int, int, list[tuple[float, int]]] | None) -> None:
+def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo, plan: LayoutPlan | None) -> None:
     W, H = job.width, job.height
     inputs = ["-i", str(cut)]
     next_input = 1
@@ -120,12 +124,37 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
     if job.logo:
         inputs += ["-loop", "1", "-i", str(job.logo)]
         logo_idx = next_input
+        next_input += 1
+    broll_idx = []
+    for _, _, clip_path in job.broll:
+        inputs += ["-stream_loop", "-1", "-i", str(clip_path)]
+        broll_idx.append(next_input)
+        next_input += 1
+    emoji_idx = []
+    for _, _, png in job.emojis:
+        inputs += ["-loop", "1", "-i", str(png)]
+        emoji_idx.append(next_input)
+        next_input += 1
+    dub_idx = None
+    if job.dub:
+        inputs += ["-i", str(job.dub)]
+        dub_idx = next_input
 
     chain: list[str] = []
-    if track is not None:
-        _, crop_w, src_h, points = track
-        (work / "cmds.txt").write_text(sendcmd_script(points), encoding="utf-8")
-        chain.append(f"[0:v]sendcmd=f=cmds.txt,crop=w={crop_w}:h={src_h}:x=0:y=0")
+    pre: list[str] = []  # graph pieces that must come before the main chain (split layout)
+    if plan is not None and plan.mode == "split" and plan.points2:
+        (work / "cmds_a.txt").write_text(sendcmd_script(plan.points, "crop@a"), encoding="utf-8")
+        (work / "cmds_b.txt").write_text(sendcmd_script(plan.points2, "crop@b"), encoding="utf-8")
+        half = H // 2
+        for tag, name in (("a", "top"), ("b", "bot")):
+            pre.append(f"[sp{tag}]sendcmd=f=cmds_{tag}.txt,crop@{tag}=w={plan.crop_w}:h={plan.src_h}:x=0:y=0,"
+                       f"scale={W}:{half}:flags=lanczos[{name}]")
+        pre.insert(0, "[0:v]split=2[spa][spb]")
+        pre.append("[top][bot]vstack=inputs=2[stack]")
+        chain.append("[stack]null")
+    elif plan is not None:
+        (work / "cmds.txt").write_text(sendcmd_script(plan.points), encoding="utf-8")
+        chain.append(f"[0:v]sendcmd=f=cmds.txt,crop=w={plan.crop_w}:h={plan.src_h}:x=0:y=0")
         chain.append(f"scale={W}:{H}:flags=lanczos")
     elif cut_info.width / cut_info.height > W / H:
         crop_w = int(round(cut_info.height * W / H)) & ~1
@@ -134,6 +163,13 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
     else:
         chain.append(f"[0:v]scale={W}:-2:flags=lanczos,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black")
     chain.append("setsar=1")
+    graph: list[str] = [*pre, ",".join(chain) + "[vsc]"]
+    cur = "vsc"  # B-roll goes under the captions, so it is overlaid before the ass filter
+    for n, ((bs, be, _), idx) in enumerate(zip(job.broll, broll_idx, strict=False)):
+        graph.append(f"[{idx}:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,"
+                     f"fps=30,format=yuv420p,setpts=PTS-STARTPTS+{bs:.2f}/TB[br{n}]")
+        graph.append(f"[{cur}][br{n}]overlay=eof_action=pass:enable='between(t,{bs:.2f},{be:.2f})'[bo{n}]")
+        cur = f"bo{n}"
 
     ass_name = "captions.ass"
     (work / ass_name).write_text(
@@ -144,24 +180,33 @@ def _final(job: RenderJob, work: Path, cut: Path, cut_info: MediaInfo,
     ass_opts = f"ass={ass_name}"
     if job.fonts_dir:
         ass_opts += f":fontsdir={_filter_path(job.fonts_dir)}"
-    chain.append(ass_opts)
-    chain.append("format=yuv420p")
-
-    graph: list[str] = [",".join(chain) + "[vcap]"]
+    graph.append(f"[{cur}]{ass_opts},format=yuv420p[vcap]")
     if logo_idx is not None:
         graph.append(f"[{logo_idx}:v]scale=iw*0.16:-1,format=rgba[logo]")
-        graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vout]")
+        graph.append("[vcap][logo]overlay=x=W-w-48:y=48:format=auto[vbase]")
     else:
-        graph.append("[vcap]null[vout]")
+        graph.append("[vcap]null[vbase]")
+    current = "vbase"  # emoji pop-ups: chain one timed overlay per emoji
+    for n, ((start, end, _), idx) in enumerate(zip(job.emojis, emoji_idx, strict=False)):
+        size = round(W * 0.14)
+        graph.append(f"[{idx}:v]scale={size}:{size},format=rgba[em{n}]")
+        graph.append(f"[{current}][em{n}]overlay=x=(W-w)/2:y=H*0.60:enable='between(t,{start:.2f},{end:.2f})'[ov{n}]")
+        current = f"ov{n}"
+    graph.append(f"[{current}]null[vout]")
 
-    if bgm_idx is not None:
+    if dub_idx is not None:
+        graph.append(f"[{dub_idx}:a]aresample=48000,loudnorm=I=-14:TP=-1.5:LRA=11[dubv]")
+        graph.append("[0:a]volume=0.10[orig]")
+        graph.append("[orig][dubv]amix=inputs=2:duration=longest:normalize=0[voice]")
+    else:
         graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11[voice]")
+    if bgm_idx is not None:
         graph.append(f"[{bgm_idx}:a]volume={job.bgm_volume},aresample=48000[bg]")
         graph.append("[voice]asplit=2[vo][sc]")
         graph.append("[bg][sc]sidechaincompress=threshold=0.03:ratio=8:attack=15:release=350[duck]")
         graph.append("[vo][duck]amix=inputs=2:duration=first:dropout_transition=0[aout]")
     else:
-        graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
+        graph.append("[voice]anull[aout]")
 
     args = [job.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *inputs,
             "-filter_complex", ";".join(graph),
@@ -184,16 +229,16 @@ def render_clip(job: RenderJob) -> RenderResult:
         _cut(job, cut, source, fps)
         cut_info = probe(cut, job.ffprobe)
 
-        track = None
+        plan = None
         if job.track_faces:
             try:
-                track = analyse_speaker_path(cut, cut_info.duration, job.width / job.height, fps, job.models_dir)
+                plan = analyse_layout(cut, cut_info.duration, job.width, job.height, fps, job.models_dir, job.layout)
             except Exception as exc:  # tracking is an enhancement; never fail a clip because of it
                 log.warning("face tracking unavailable, using centre crop: %s", exc)
 
-        _final(job, work, cut, cut_info, track)
+        _final(job, work, cut, cut_info, plan)
 
     if not job.output.exists() or job.output.stat().st_size == 0:
         raise MediaError(f"render produced no output for {job.output.name}")
     final = probe(job.output, job.ffprobe)
-    return RenderResult(job.output, final.duration, track is not None, job.encoder)
+    return RenderResult(job.output, final.duration, plan is not None, job.encoder, plan.mode if plan else "center")

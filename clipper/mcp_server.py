@@ -84,7 +84,9 @@ def build_server(settings: Settings | None = None) -> MCPServer:
     def clip_video(source: str, num_clips: int = 5, min_seconds: float = 20, max_seconds: float = 60,
                    style: str = "hormozi", aspect: str = "9:16", focus: str | None = None,
                    translate_to: str | None = None, hook: bool = True, remove_silence: bool = True,
-                   progress_bar: bool = False) -> dict[str, str]:
+                   progress_bar: bool = False, layout: str = "auto",
+                   dub_to: str | None = None, emoji: bool = False,
+                   broll: bool = False) -> dict[str, str]:
         """Automatically find the best moments in a video and render finished captioned clips.
 
         source: YouTube URL or absolute path to a local video file.
@@ -94,7 +96,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
         """
         opts = options_from(num_clips=num_clips, min_seconds=min_seconds, max_seconds=max_seconds, style=style,
                             aspect=aspect, focus=focus, translate_to=translate_to, hook=hook,
-                            remove_silence=remove_silence, progress_bar=progress_bar)
+                            remove_silence=remove_silence, progress_bar=progress_bar, layout=layout, dub_to=dub_to, emoji=emoji, broll=broll)
         return {"job_id": submit("clip_video", lambda d, p: process(source, opts, settings, d, p))}
 
     @mcp.tool()
@@ -143,6 +145,32 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                             progress_bar=progress_bar, translate_to=translate_to, num_clips=len(chosen))
         return {"job_id": submit("render_clips",
                                 lambda d, p: process(source, opts, settings, d, p, manual_clips=chosen))}
+
+    @mcp.tool()
+    def publish_youtube(job_id: str, clip_index: int, privacy: str = "private", schedule: str | None = None,
+                        confirm: bool = False) -> dict[str, Any]:
+        """Upload a finished clip to YouTube as a Short. PREVIEW ONLY unless confirm=true.
+
+        Always show the preview to the user and get their approval before calling with confirm=true.
+        schedule: optional future ISO time (uploads private, goes public then). Needs `clipper auth youtube`.
+        """
+        import dataclasses
+
+        from .publish import build_body, load_clip, record_publication, upload
+
+        job = jobs.get(job_id)
+        if job is None or job["status"] != "done":
+            raise ValueError("job not found or not finished")
+        clip, req = load_clip(Path(job["output_dir"]), clip_index)
+        req = dataclasses.replace(req, privacy=privacy, publish_at=schedule)
+        preview = {"file": str(req.file), **build_body(req)}
+        if not confirm:
+            return {"published": False, "preview": preview, "note": "call again with confirm=true after the user approves"}
+        video_id = upload(req, settings.data_dir / "youtube_token.json")
+        record_publication(settings.data_dir / "published.json",
+                           {"video_id": video_id, "title": req.title, "predicted_score": clip["score"],
+                            "run": job["output_dir"], "clip": clip_index})
+        return {"published": True, "url": f"https://youtube.com/watch?v={video_id}"}
 
     @mcp.tool()
     def get_job(job_id: str) -> dict[str, Any]:

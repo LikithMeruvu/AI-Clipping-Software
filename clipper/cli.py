@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -35,9 +36,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     settings = get_settings()
     options = Options(
         num_clips=args.num, min_seconds=args.min, max_seconds=args.max, style=args.style,
-        aspect=args.aspect, focus=args.focus, language=args.language, translate_to=args.translate,
-        hook=not args.no_hook, remove_silence=not args.keep_silence, captions=not args.no_captions,
-        progress_bar=args.progress_bar, track_faces=not args.no_tracking,
+        aspect=args.aspect, focus=args.focus, language=args.language, translate_to=args.translate, dub_to=args.dub,
+        hook=not args.no_hook, emoji=args.emoji, broll=args.broll, remove_silence=not args.keep_silence, captions=not args.no_captions,
+        layout=args.layout, progress_bar=args.progress_bar, track_faces=not args.no_tracking,
         bgm=Path(args.bgm) if args.bgm else None, bgm_volume=args.bgm_volume,
         logo=Path(args.logo) if args.logo else None,
     )
@@ -77,6 +78,64 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print("refusing to serve on a public interface without API_TOKEN set", file=sys.stderr)
         return 2
     uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+    return 0
+
+
+def cmd_auth(args: argparse.Namespace) -> int:
+    from .publish import PublishError, authorize
+
+    settings = get_settings()
+    if not settings.youtube_client_secrets:
+        print("set YOUTUBE_CLIENT_SECRETS to your OAuth desktop client JSON first", file=sys.stderr)
+        return 2
+    try:
+        authorize(settings.youtube_client_secrets, settings.data_dir / "youtube_token.json")
+    except PublishError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print("YouTube authorised.")
+    return 0
+
+
+def cmd_publish(args: argparse.Namespace) -> int:
+    import dataclasses
+
+    from .publish import PublishError, load_clip, record_publication, upload
+
+    settings = get_settings()
+    try:
+        clip, req = load_clip(Path(args.run_dir), args.clip)
+        req = dataclasses.replace(req, privacy=args.privacy, publish_at=args.schedule)
+        from .publish import build_body
+        body = build_body(req)
+        print(json.dumps({"file": str(req.file), **body}, indent=2, ensure_ascii=False))
+        if not args.yes:
+            print("\nPreview only. Re-run with --yes to upload.")
+            return 0
+        video_id = upload(req, settings.data_dir / "youtube_token.json")
+        record_publication(settings.data_dir / "published.json",
+                           {"video_id": video_id, "title": req.title, "predicted_score": clip["score"],
+                            "run": str(args.run_dir), "clip": args.clip})
+        print(f"Uploaded: https://youtube.com/watch?v={video_id}")
+        return 0
+    except PublishError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+def cmd_stats(_: argparse.Namespace) -> int:
+    from .publish import PublishError, fetch_stats
+
+    settings = get_settings()
+    try:
+        rows = fetch_stats(settings.data_dir / "published.json", settings.data_dir / "youtube_token.json")
+    except PublishError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not rows:
+        print("Nothing published through this tool yet.")
+    for r in rows:
+        print(f"predicted {r['predicted_score']:>3} | views {r['views']:>8} | likes {r['likes']:>6} | {r['title']}")
     return 0
 
 
@@ -137,9 +196,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--focus", help="steer selection, e.g. 'funny moments about startups'")
     run.add_argument("--language", help="source language code, e.g. en (default: auto)")
     run.add_argument("--translate", metavar="LANGUAGE", help="translate captions, e.g. Spanish")
+    run.add_argument("--dub", metavar="LANGUAGE", help="AI voice-over in this language (Gemini TTS)")
+    run.add_argument("--emoji", action="store_true", help="pop up emoji on trigger words")
+    run.add_argument("--broll", action="store_true", help="AI-placed stock B-roll (needs PEXELS_API_KEY)")
     run.add_argument("--keep-silence", action="store_true", help="do not remove long pauses")
     run.add_argument("--no-hook", action="store_true", help="no hook headline at the top")
     run.add_argument("--no-captions", action="store_true", help="no burned-in captions")
+    run.add_argument("--layout", default="auto", choices=["auto", "single", "split"],
+                     help="split stacks two on-screen speakers; auto decides per clip")
     run.add_argument("--no-tracking", action="store_true", help="centre crop instead of face tracking")
     run.add_argument("--progress-bar", action="store_true", help="draw a progress bar along the bottom")
     run.add_argument("--bgm", help="background music file (ducked under speech)")
@@ -158,6 +222,21 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--host", default="127.0.0.1")
     mcp.add_argument("--port", type=int, default=8765)
     mcp.set_defaults(func=cmd_mcp)
+
+    auth = sub.add_parser("auth", help="authorise a publishing account")
+    auth.add_argument("platform", choices=["youtube"])
+    auth.set_defaults(func=cmd_auth)
+
+    pub = sub.add_parser("publish", help="upload a finished clip to YouTube (preview unless --yes)")
+    pub.add_argument("run_dir", help="output/<timestamp> folder containing manifest.json")
+    pub.add_argument("--clip", type=int, required=True)
+    pub.add_argument("--privacy", default="private", choices=["private", "unlisted", "public"])
+    pub.add_argument("--schedule", metavar="ISO_TIME", help="e.g. 2026-12-01T15:00:00Z (uploads as private until then)")
+    pub.add_argument("--yes", action="store_true", help="actually upload")
+    pub.set_defaults(func=cmd_publish)
+
+    stats = sub.add_parser("stats", help="views and likes of clips published through this tool")
+    stats.set_defaults(func=cmd_stats)
 
     doctor = sub.add_parser("doctor", help="check the environment")
     doctor.set_defaults(func=cmd_doctor)

@@ -147,3 +147,160 @@ def test_valid_youtube_urls(url, vid):
 def test_rejected_urls(url):
     with pytest.raises(IngestError):
         validate_youtube_url(url)
+
+
+# ---------- active speaker and layout ----------
+
+def _two_faces(t, mouth_left, mouth_right):
+    return [FaceSample(t, 0.25, 0.5, 0.3, 1.0, mouth_left), FaceSample(t, 0.75, 0.5, 0.3, 1.0, mouth_right)]
+
+
+def test_active_speaker_camera_follows_whoever_talks_with_dwell_time():
+    from clipper.reframe import pick_track
+    samples = []
+    for i in range(40):  # 10 s at 0.25 s steps: left talks first half, right second half
+        t = i * 0.25
+        samples += _two_faces(t, 0.5 if t < 5 else 0.0, 0.0 if t < 5 else 0.5)
+    track = dict(pick_track(samples, 10.0))
+    assert track[2.0] == 0.25 and track[9.0] == 0.75
+    switches = sum(1 for a, b in zip(list(track.values()), list(track.values())[1:]) if a != b)
+    assert switches == 1  # no ping-pong
+
+
+def test_decide_layout_split_only_for_persistent_side_by_side_faces():
+    from clipper.reframe import decide_layout, pick_pair_tracks
+    both = [s for i in range(40) for s in _two_faces(i * 0.25, 0.1, 0.1)]
+    assert decide_layout(both, 10.0) == "split"
+    one = [FaceSample(i * 0.25, 0.5, 0.5, 0.3, 1.0) for i in range(40)]
+    assert decide_layout(one, 10.0) == "single"
+    left, right = pick_pair_tracks(both, 10.0)
+    assert left[5][1] == 0.25 and right[5][1] == 0.75
+
+
+def test_sendcmd_script_supports_named_targets():
+    assert sendcmd_script([(0.0, 4)], "crop@a") == "0.0000 crop@a x 4;\n"
+
+
+# ---------- emoji and dubbing helpers ----------
+
+def test_emoji_events_respect_spacing_and_cap():
+    from clipper.emoji import pick_emoji_events
+    ws = [Word(1, 1.2, "Money!"), Word(1.5, 1.7, "crazy"), Word(5, 5.2, "wow"), Word(9, 9.2, "fire")]
+    ev = pick_emoji_events(ws, max_events=2, min_gap=2.5)
+    assert [e.start for e in ev] == [1, 5]  # "crazy" too close to "money"; cap of 2 honoured
+
+
+def test_atempo_chain_splits_ratios_outside_supported_range():
+    from clipper.dub import atempo_chain
+    assert atempo_chain(1.25) == "atempo=1.2500"
+    assert atempo_chain(3.0).startswith("atempo=2.0,")
+
+
+# ---------- B-roll ----------
+
+def test_pick_video_file_prefers_hd_portrait_mp4():
+    from clipper.broll import pick_video_file
+    payload = {"videos": [{"video_files": [
+        {"file_type": "video/mp4", "width": 360, "height": 640, "link": "low"},
+        {"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "hd"},
+        {"file_type": "video/webm", "width": 1080, "height": 1920, "link": "webm"}]}]}
+    assert pick_video_file(payload) == "hd"
+    assert pick_video_file({"videos": []}) is None
+
+
+def test_plan_broll_enforces_rules():
+    from clipper.broll import BrollPlan, plan_broll
+    plan = BrollPlan.model_validate({"items": [
+        {"start": 0.5, "duration": 2, "query": "too early"},
+        {"start": 5, "duration": 9, "query": "city"},          # duration clamped to 3
+        {"start": 6, "duration": 2, "query": "overlaps"},       # < 3 s after the previous one
+        {"start": 28, "duration": 2, "query": "too late"}]})
+    got = plan_broll(FakeLLM(plan), [(0, 30, "x")], clip_seconds=30)
+    assert [(g.query, g.duration) for g in got] == [("city", 3.0)]
+
+
+def test_fetch_broll_downloads_once_and_survives_failure(tmp_path):
+    import io
+    import json
+
+    from clipper.broll import fetch_broll
+
+    calls = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def opener(req, timeout=0):
+        url = getattr(req, "full_url", req)
+        calls.append(url)
+        if "api.pexels" in url:
+            return Resp(json.dumps({"videos": [{"video_files": [
+                {"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "https://cdn/x.mp4"}]}]}).encode())
+        return Resp(b"VIDEO")
+
+    path = fetch_broll("city", "key", tmp_path, opener)
+    assert path and path.read_bytes() == b"VIDEO"
+    assert fetch_broll("city", "key", tmp_path, opener) == path and len(calls) == 2  # cached second time
+
+    def boom(*a, **k):
+        raise OSError("offline")
+
+    assert fetch_broll("other", "key", tmp_path, boom) is None
+
+
+# ---------- publishing (mocked: no network, no credentials) ----------
+
+def test_build_body_adds_shorts_tag_and_schedule_forces_private():
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    from clipper.publish import PublishError, UploadRequest, build_body
+    when = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body = build_body(UploadRequest(Path("x.mp4"), "T" * 120, "desc", privacy="public", publish_at=when,
+                                    tags=("#a", "#b")))
+    assert len(body["snippet"]["title"]) == 90 and body["snippet"]["tags"] == ["a", "b"]
+    assert "#Shorts" in body["snippet"]["description"]
+    assert body["status"]["privacyStatus"] == "private" and body["status"]["publishAt"].endswith("Z")
+    with pytest.raises(PublishError):
+        build_body(UploadRequest(Path("x.mp4"), "t", "d", publish_at="2001-01-01T00:00:00Z"))
+    with pytest.raises(PublishError):
+        build_body(UploadRequest(Path("x.mp4"), "t", "d", privacy="everyone"))
+
+
+def test_upload_and_stats_use_the_api_in_order(tmp_path):
+    import json
+
+    from clipper.publish import UploadRequest, fetch_stats, record_publication, upload
+    f = tmp_path / "c.mp4"
+    f.write_bytes(b"0" * 1000)
+
+    class Req:
+        def next_chunk(self):
+            return None, {"id": "abc12345678"}
+
+    class Videos:
+        def insert(self, **kw):
+            assert kw["part"] == "snippet,status" and kw["body"]["snippet"]["title"] == "Hi"
+            return Req()
+
+        def list(self, **kw):
+            class R:
+                def execute(self_inner):
+                    return {"items": [{"id": "abc12345678", "statistics": {"viewCount": "42", "likeCount": "3"}}]}
+            return R()
+
+    class Svc:
+        def videos(self):
+            return Videos()
+
+    vid = upload(UploadRequest(f, "Hi", "d"), tmp_path / "tok.json", service=Svc())
+    assert vid == "abc12345678"
+    rec = tmp_path / "published.json"
+    record_publication(rec, {"video_id": vid, "title": "Hi", "predicted_score": 90})
+    rows = fetch_stats(rec, tmp_path / "tok.json", service=Svc())
+    assert rows[0]["views"] == 42 and rows[0]["predicted_score"] == 90
+    assert json.loads(rec.read_text())[0]["video_id"] == vid

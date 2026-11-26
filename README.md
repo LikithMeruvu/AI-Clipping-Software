@@ -56,20 +56,30 @@ If the LLM fails, the run falls back to a deterministic heuristic and says so in
 ## Feature status (vs. Opus Clip-style tools)
 | Feature | Status |
 |---|---|
-| AI clip selection with virality score, hook, title, description, hashtags | ✅ |
-| Prompt-guided selection (`--focus`) | ✅ |
-| Auto-reframe to 9:16 / 4:5 / 1:1 / 16:9 with face tracking | ✅ single speaker (largest, steadiest face) |
-| Animated word-by-word captions, 5 styles, SRT export | ✅ |
-| Hook headline overlay, progress bar, logo overlay | ✅ (logo and music: CLI only) |
-| Silence/pause removal (jump cuts) | ✅ |
-| Caption translation | ✅ LLM-translated, line-level (no word highlight) |
-| Background music with speech ducking | ✅ CLI `--bgm` (not in web UI) |
-| Web UI, job queue, upload, API token | ✅ |
-| MCP server | ✅ |
-| Split-screen for two speakers, true active-speaker detection | ❌ not built |
-| AI B-roll, emoji overlays, dubbing / voice cloning | ❌ not built |
-| Publishing/scheduling to YouTube, TikTok, Instagram | ❌ needs per-platform developer apps (OAuth) |
-| Analytics / virality tracking | ❌ not built |
+| AI clip selection with virality score, hook, title, description, hashtags; `--focus` prompt | ✅ tested live |
+| Auto-reframe 9:16 / 4:5 / 1:1 / 16:9 with face tracking | ✅ tested live |
+| Active-speaker switching (mouth-movement signal) | ✅ unit-tested; single-camera interview footage only partially checked |
+| Split-screen layout for two speakers on screen (`--layout`) | ✅ mechanism verified on a composite test video; framing quality on real two-shot footage not verified |
+| Animated word-by-word captions (5 styles), SRT, hook headline, progress bar, logo | ✅ tested live |
+| Silence/pause removal, caption translation | ✅ tested live |
+| AI dubbing (`--dub Spanish`, Gemini TTS, original kept underneath) | ✅ tested live (output transcribes back as Spanish) |
+| Emoji pop-ups on trigger words (`--emoji`) | ✅ overlay verified; keyword list is simple |
+| AI B-roll from Pexels (`--broll`, needs `PEXELS_API_KEY`) | ⚠️ render verified with a local clip; the Pexels API calls are only mock-tested |
+| Publish/schedule to YouTube Shorts (`publish`, `auth`) | ⚠️ preview verified; **upload never run** (needs your OAuth client); unverified API projects are forced private by YouTube |
+| Performance stats vs predicted score (`stats`) | ⚠️ mock-tested only, YouTube only |
+| Background music with ducking (`--bgm`), web UI, job queue, MCP server | ✅ |
+| TikTok / Instagram / LinkedIn publishing | ❌ needs approved developer apps; not built |
+| Speaker diarisation / voice cloning | ❌ not built |
+
+### Publishing (YouTube)
+```bash
+# one time: create an OAuth *Desktop* client (YouTube Data API v3), set YOUTUBE_CLIENT_SECRETS in .env
+python -m clipper auth youtube
+python -m clipper publish output/20261118-120000 --clip 1                       # preview only
+python -m clipper publish output/20261118-120000 --clip 1 --schedule 2026-12-01T15:00:00Z --yes
+python -m clipper stats
+```
+The MCP tool `publish_youtube` is preview-only unless `confirm=true`, so an agent cannot upload without your approval step.
 
 ## Development
 ```bash

@@ -20,8 +20,11 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, Field
 
+from .broll import fetch_broll, plan_broll
 from .captions import STYLES, Line, build_srt, group_words
 from .config import Settings
+from .dub import synthesize
+from .emoji import fetch_emoji_png, pick_emoji_events
 from .llm import LLM, LLMError, build_llm
 from .media import MediaError, pick_encoder, probe
 from .render import RenderJob, render_clip
@@ -57,11 +60,15 @@ class Options:
     focus: str | None = None
     language: str | None = None          # source language hint; None = auto-detect
     translate_to: str | None = None      # e.g. "Spanish"; captions are translated
+    dub_to: str | None = None            # e.g. "Spanish"; AI voice-over (also translates captions)
     hook: bool = True
     remove_silence: bool = True
     captions: bool = True
+    emoji: bool = False
+    broll: bool = False                  # needs PEXELS_API_KEY
     progress_bar: bool = False
     track_faces: bool = True
+    layout: str = "auto"
     bgm: Path | None = None
     bgm_volume: float = 0.18
     logo: Path | None = None
@@ -73,6 +80,8 @@ class Options:
             raise IngestError("need 5 <= min_seconds < max_seconds <= 180")
         if self.style not in STYLES:
             raise IngestError(f"unknown style {self.style!r}; choose one of {', '.join(STYLES)}")
+        if self.layout not in ("auto", "single", "split"):
+            raise IngestError("layout must be auto, single or split")
         if self.aspect not in ASPECTS:
             raise IngestError(f"unknown aspect {self.aspect!r}; choose one of {', '.join(ASPECTS)}")
 
@@ -207,21 +216,48 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
         timemap = TimeMap.from_intervals(intervals)
         words = timemap.map_words(transcript.words)
         lines: list[Line] = group_words(words, style) if (options.captions and words) else []
-        if options.translate_to and lines and llm is not None:
+        target_lang = options.dub_to or options.translate_to
+        dub_wav = None
+        if target_lang and lines and llm is not None:
             try:
-                translated = _translate(llm, [" ".join(w.text for w in ln.words or ()) for ln in lines],
-                                        options.translate_to)
-                lines = [Line(start=ln.start, end=ln.end, text=t) for ln, t in zip(lines, translated)]
-            except LLMError as exc:
-                warnings.append(f"translation skipped for clip {i}: {exc}")
+                translated = _translate(llm, [" ".join(w.text for w in ln.words or ()) for ln in lines], target_lang)
+                lines = [Line(start=ln.start, end=ln.end, text=t) for ln, t in zip(lines, translated, strict=False)]
+                if options.dub_to:
+                    dub_wav = job_dir / f"clip_{i:02d}.dub.wav"
+                    synthesize(settings, " ".join(translated), options.dub_to, dub_wav, timemap.duration, warnings)
+            except Exception as exc:  # translation/TTS are optional extras: keep the clip, report the gap
+                warnings.append(f"translation/dub skipped for clip {i}: {exc}")
+                dub_wav = None
+
+        broll_cuts: tuple = ()
+        if options.broll and llm is not None and words and lines:
+            if not settings.pexels_api_key:
+                warnings.append("B-roll requested but PEXELS_API_KEY is not set")
+            else:
+                try:
+                    texts = [(ln.start, ln.end, ln.text or " ".join(w.text for w in ln.words or ())) for ln in lines]
+                    got = []
+                    for item in plan_broll(llm, texts, timemap.duration):
+                        path = fetch_broll(item.query, settings.pexels_api_key.get_secret_value(),
+                                           settings.cache_dir / "broll")
+                        if path:
+                            got.append((item.start, item.start + item.duration, path))
+                    broll_cuts = tuple(got)
+                except Exception as exc:
+                    warnings.append(f"B-roll skipped for clip {i}: {exc}")
+        emojis = ()
+        if options.emoji and words:
+            found = [(e.start, e.end, fetch_emoji_png(e.emoji, settings.cache_dir / "emoji"))
+                     for e in pick_emoji_events(words)]
+            emojis = tuple((a, b, p) for a, b, p in found if p)
 
         stem = f"clip_{i:02d}_score{clip.score}"
         out = job_dir / f"{stem}.mp4"
         render_job = RenderJob(
             source=source.path, output=out, intervals=intervals, captions=lines, style=style,
             width=width, height=height, hook=clip.hook if options.hook else None,
-            progress_bar=options.progress_bar, track_faces=options.track_faces,
-            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo,
+            progress_bar=options.progress_bar, track_faces=options.track_faces, layout=options.layout,
+            bgm=options.bgm, bgm_volume=options.bgm_volume, logo=options.logo, dub=dub_wav, emojis=emojis, broll=broll_cuts,
             encoder=encoder, fonts_dir=fonts, models_dir=settings.models_dir,
             ffmpeg=settings.ffmpeg_bin, ffprobe=settings.ffprobe_bin,
         )
@@ -245,10 +281,14 @@ def process(source_value: str | Path, options: Options, settings: Settings, job_
             try:
                 res = fut.result()
                 meta["face_tracked"] = res.face_tracked
+                meta["layout"] = res.layout
                 meta["encoder"] = res.encoder
                 meta["duration"] = round(res.duration, 2)
                 rj.output.with_suffix(".srt").write_text(build_srt(rj.captions, style), encoding="utf-8")
                 meta["status"] = "ok"
+                if rj.dub:
+                    meta["dubbed"] = True
+                    rj.dub.unlink(missing_ok=True)
             except Exception as exc:  # one bad clip must not sink the whole job
                 log.exception("clip %s failed", meta["index"])
                 meta["status"] = "failed"
